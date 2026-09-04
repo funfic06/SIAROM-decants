@@ -12,10 +12,6 @@
  * Quando tiver backend, mova esta lógica para lá.
  */
 
-const CAJUPAY_API = "https://api.cajupay.com.br";
-const API_KEY = import.meta.env.VITE_CAJUPAY_API_KEY as string;
-const API_SECRET = import.meta.env.VITE_CAJUPAY_API_SECRET as string;
-
 export type BagItem = {
   name: string;
   volumeMl: number;
@@ -41,47 +37,19 @@ export async function createPaymentLink(
   totalCents: number,
   orderRef: string
 ): Promise<PaymentLinkResult> {
-  if (!API_KEY || !API_SECRET) {
-    throw new Error(
-      "Chaves da Cajupay não configuradas. Adicione VITE_CAJUPAY_API_KEY e VITE_CAJUPAY_API_SECRET no .env"
-    );
-  }
-
-  // Monta a descrição do pedido com os itens
-  const description = items
-    .map((item) => `${item.name} ${item.isApc ? `APC+${item.volumeMl}ml` : `${item.volumeMl}ml`} x${item.quantity}`)
-    .join(", ");
-
-  const response = await fetch(`${CAJUPAY_API}/api/sdk/v1/checkout/sessions`, {
+  const response = await fetch("/api/cajupay/checkout", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": API_KEY,
-      "X-API-Secret": API_SECRET,
-      // Idempotency-Key garante que cliques duplos não criem duas sessões
-      "Idempotency-Key": `siarom-${orderRef}-${Date.now()}`,
     },
-    body: JSON.stringify({
-      amount_cents: totalCents,        // Total em centavos — obrigatório mínimo 200
-      currency: "BRL",
-      description: `Pedido SIAROM: ${description}`,
-      allow_card: true,
-      allow_apple_pay: true,
-      allow_google_pay: true,
-      allow_pix: false,               // PIX requer backend — deixar false por ora
-      locale: "pt-BR",
-    }),
+    body: JSON.stringify({ items, totalCents, orderRef }),
   });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Erro Cajupay (${response.status}): ${errorBody}`);
-  }
-
-  const data = await response.json();
+  const data = await response.json().catch(() => ({} as { error?: string }));
+  if (!response.ok) throw new Error(data.error || `Erro Cajupay (${response.status}).`);
 
   return {
-    checkoutUrl: data.hosted_checkout_url,
-    sessionId: data.checkout_session_id,
+    checkoutUrl: data.checkoutUrl,
+    sessionId: data.sessionId,
   };
 }
