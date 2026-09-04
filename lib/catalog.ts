@@ -92,6 +92,12 @@ export function findPerfume(slug?: string) { return perfumes.find((perfume) => p
 export const perfumes = seedPerfumes;
 
 const catalogVolumes = [3, 7, 10, 15, 20, 30];
+function customVolumes(raw: Record<string, unknown>) {
+  const values = Array.isArray(raw.customVolumes)
+    ? raw.customVolumes.map((value) => numberValue(value)).filter((value) => value > 0)
+    : [];
+  return Array.from(new Set(values)).sort((left, right) => left - right);
+}
 function numberValue(value: unknown) {
   const parsed = Number.parseFloat(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -138,7 +144,7 @@ export function adaptPerfume(raw: Record<string, unknown>, index = 0, apcStatus?
     shortDescription: rawText(raw.shortDescription) || rawText(raw.obs) || "Uma fragrância selecionada para o arquivo SIAROM.",
     description: rawText(raw.description) || rawText(raw.obs) || "Conheça esta fragrância em uma fração pensada para experimentar a matéria antes do frasco inteiro.",
     notes: rawNotes, accords: rawAccords, intensity: rawText(raw.intensity) || "A definir", longevity: rawText(raw.longevity) || "A definir",
-    volumeOptions: catalogVolumes.map((ml) => ({ ml, price: priceFor(ml) })), apc: raw.hasApc === true ? { ml: apcMl, price: apcPrice, limit: apcLimit, available: apcUsed < apcLimit } : undefined,
+    volumeOptions: (customVolumes(raw).length ? customVolumes(raw) : catalogVolumes).map((ml) => ({ ml, price: priceFor(ml) })), apc: raw.hasApc === true ? { ml: apcMl, price: apcPrice, limit: apcLimit, available: apcUsed < apcLimit } : undefined,
     stock: totalMl > 0 ? Math.max(0, totalMl - usedMl) : 0,
     edition: rawText(raw.edition) || "Arquivo SIAROM", deliveryText: rawText(raw.deliveryText) || "Os frascos são enviados com identificação da fragrância e do volume. Embalados em caixas com proteção para manter os frascos intactos, visando preservar a experiência completa da fragrância.", available: raw.available !== false, obs: rawText(raw.obs), raw: { ...raw, recavePrice: recave },
   };
@@ -184,7 +190,7 @@ export function buildWhatsappMessage(raw: Record<string, unknown>) {
   if (referenceUrl) { lines.push(referenceUrl); lines.push(""); }
 
   lines.push("Volumetrias disponíveis:");
-  catalogVolumes.forEach((ml) => {
+  (customVolumes(raw).length ? customVolumes(raw) : catalogVolumes).forEach((ml) => {
     const price = priceFor(ml);
     if (price > 0) lines.push(`  · ${ml} ml: ${formatPrice(price)}`);
   });
