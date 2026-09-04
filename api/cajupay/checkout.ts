@@ -40,26 +40,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return `${name} ${item.isApc ? `APC+${volume}ml` : `${volume}ml`} x${quantity}`;
   }).join(", ");
 
-  try {
-    const response = await fetch(`${CAJUPAY_API}/api/sdk/v1/checkout/sessions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": apiKey,
-        "X-API-Secret": apiSecret,
-        "Idempotency-Key": `siarom-${orderRef}-${Date.now()}`,
-      },
-      body: JSON.stringify({
-        amount_cents: totalCents,
-        currency: "BRL",
-        description: `Pedido SIAROM: ${description}`,
-        allow_card: true,
-        allow_apple_pay: true,
-        allow_google_pay: true,
-        allow_pix: false,
-        locale: "pt-BR",
-      }),
-    });
+  const payload = {
+  amount_cents: totalCents,
+  currency: "BRL",
+  description: `Pedido SIAROM: ${description}`,
+  allow_card: true,
+  allow_apple_pay: true,
+  allow_google_pay: true,
+  allow_pix: false,
+  locale: "pt-BR",
+};
+
+// Mostra exatamente o payload enviado para a Cajupay
+console.log("=== PAYLOAD ENVIADO PARA CAJUPAY ===");
+console.log(JSON.stringify(payload, null, 2));
+
+const response = await fetch(`${CAJUPAY_API}/api/sdk/v1/checkout/sessions`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-API-Key": apiKey,
+    "X-API-Secret": apiSecret,
+    "Idempotency-Key": `siarom-${orderRef}-${Date.now()}`,
+  },
+  body: JSON.stringify(payload),
+});
 
     const responseText = await response.text();
     let data: { hosted_checkout_url?: string; checkout_session_id?: string; message?: string } = {};
