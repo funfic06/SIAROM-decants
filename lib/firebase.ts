@@ -65,20 +65,15 @@ export async function getAdminProfile(user: User) {
 }
 
 export function subscribeOrders(onData: (orders: CustomerOrder[], fromServer: boolean) => void, onError: (error: Error) => void): Unsubscribe {
+  // Older orders may not have createdAt, and an orderBy query can fail because
+  // of a missing index or mixed legacy data. The collection is already
+  // protected by Firestore rules, so sort after reading it.
   return onSnapshot(ordersRef, (snapshot) => {
-    const orders = snapshot.docs.map((item) => ({
-      id: item.id,
-      ...item.data(),
-    } as CustomerOrder));
-
-    orders.sort((left, right) =>
-      String(right.createdAt || "").localeCompare(String(left.createdAt || ""))
-    );
-
+    const orders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as CustomerOrder));
+    orders.sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
     onData(orders, !snapshot.metadata.hasPendingWrites);
   }, onError);
 }
-
 
 export function subscribeApcStatus(onData: (status: Record<string, ApcStatus>) => void, onError: (error: Error) => void): Unsubscribe {
   return onSnapshot(apcStatusRef, (snapshot) => {
