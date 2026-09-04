@@ -67,7 +67,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!response.ok) {
       console.error("Erro Cajupay:", response.status, responseText);
-      return sendError(res, 502, data.message || `A Cajupay recusou a solicitação (${response.status}).`);
+      const apiReason = data.message || (data as { error?: string; detail?: string }).error || (data as { detail?: string }).detail || responseText;
+      const readableReason = apiReason.replace(/\s+/g, " ").trim().slice(0, 500);
+      return sendError(res, response.status === 400 ? 400 : 502, `A Cajupay recusou a solicitação (${response.status})${readableReason ? `: ${readableReason}` : "."}`);
     }
 
     if (!data.hosted_checkout_url) return sendError(res, 502, "A Cajupay não retornou o link do checkout.");
