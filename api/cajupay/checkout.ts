@@ -10,8 +10,43 @@ type CheckoutItem = {
   isApc?: boolean;
 };
 
+type CajupayResponse = {
+  hosted_checkout_url?: string;
+  checkout_session_id?: string;
+  error?: unknown;
+  message?: unknown;
+  detail?: unknown;
+};
+
 function sendError(res: VercelResponse, status: number, message: string) {
   return res.status(status).json({ error: message });
+}
+
+function normalizeReason(value: unknown): string {
+  if (typeof value === "string") {
+    return value.replace(/\s+/g, " ").trim();
+  }
+
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(value).replace(/\s+/g, " ").trim();
+  } catch {
+    return String(value).replace(/\s+/g, " ").trim();
+  }
+}
+
+function getCajupayReason(data: CajupayResponse, responseText: string): string {
+  const candidates = [data.error, data.message, data.detail];
+
+  for (const candidate of candidates) {
+    const reason = normalizeReason(candidate);
+    if (reason) return reason;
+  }
+
+  return normalizeReason(responseText);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -41,46 +76,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }).join(", ");
 
   const payload = {
-  amount_cents: totalCents,
-  currency: "BRL",
-  description: `Pedido SIAROM: ${description}`,
-  allow_card: true,
-  allow_apple_pay: true,
-  allow_google_pay: true,
-  allow_pix: false,
-  locale: "pt-BR",
-};
+    amount_cents: totalCents,
+    currency: "BRL",
+    description: `Pedido SIAROM: ${description}`,
+    allow_card: true,
+    allow_apple_pay: true,
+    allow_google_pay: true,
+    allow_pix: false,
+    locale: "pt-BR",
+  };
 
-// Mostra exatamente o payload enviado para a Cajupay
-console.log("=== PAYLOAD ENVIADO PARA CAJUPAY ===");
-console.log(JSON.stringify(payload, null, 2));
+  try {
+    // O payload não contém API Key nem API Secret e pode ser registrado com segurança.
+    console.log("=== PAYLOAD ENVIADO PARA CAJUPAY ===");
+    console.log(JSON.stringify(payload, null, 2));
 
-const response = await fetch(`${CAJUPAY_API}/api/sdk/v1/checkout/sessions`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-API-Key": apiKey,
-    "X-API-Secret": apiSecret,
-    "Idempotency-Key": `siarom-${orderRef}-${Date.now()}`,
-  },
-  body: JSON.stringify(payload),
-});
+    const response = await fetch(`${CAJUPAY_API}/api/sdk/v1/checkout/sessions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+        "X-API-Secret": apiSecret,
+        "Idempotency-Key": `siarom-${orderRef}-${Date.now()}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
     const responseText = await response.text();
-    let data: { hosted_checkout_url?: string; checkout_session_id?: string; message?: string } = {};
-    try { data = JSON.parse(responseText); } catch { /* resposta não JSON */ }
+    let data: CajupayResponse = {};
 
-    if (!response.ok) {
-      console.error("Erro Cajupay:", response.status, responseText);
-      const apiReason = data.message || (data as { error?: string; detail?: string }).error || (data as { detail?: string }).detail || responseText;
-      const readableReason = apiReason.replace(/\s+/g, " ").trim().slice(0, 500);
-      return sendError(res, response.status === 400 ? 400 : 502, `A Cajupay recusou a solicitação (${response.status})${readableReason ? `: ${readableReason}` : "."}`);
+    try {
+      const parsed: unknown = JSON.parse(responseText);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        data = parsed as CajupayResponse;
+      }
+    } catch {
+      // A resposta pode não ser JSON; nesse caso, o corpo bruto será usado como motivo.
     }
 
-    if (!data.hosted_checkout_url) return sendError(res, 502, "A Cajupay não retornou o link do checkout.");
-    return res.status(200).json({ checkoutUrl: data.hosted_checkout_url, sessionId: data.checkout_session_id || "" });
-  } catch (error) {
-    console.error("Falha de comunicação com Cajupay:", error);
+    if (!response.ok) {
+      // Não registre os headers: eles contêm X-API-Key e X-API-Secret.
+      console.error("Erro retornado pela Cajupay:", {
+        status: response.status,
+        body: responseText,
+        payload,
+      });
+
+      const apiReason = getCajupayReason(data, responseText).slice(0, 500);
+      return sendError(
+        res,
+        response.status === 400 ? 400 : 502,
+        `A Cajupay recusou a solicitação (${response.status})${apiReason ? `: ${apiReason}` : "."}`,
+      );
+    }
+
+    if (!data.hosted_checkout_url) {
+      return sendError(res, 502, "A Cajupay não retornou o link do checkout.");
+    }
+
+    return res.status(200).json({
+      checkoutUrl: data.hosted_checkout_url,
+      sessionId: data.checkout_session_id || "",
+    });
+  } catch (error: unknown) {
+    console.error("Falha de comunicação com Cajupay:", {
+      error: error instanceof Error ? error.message : String(error),
+      payload,
+    });
+
     return sendError(res, 502, "Não foi possível conectar à Cajupay. Tente novamente.");
   }
 }
