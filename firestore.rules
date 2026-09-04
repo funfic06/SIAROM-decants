@@ -18,7 +18,8 @@ service cloud.firestore {
     }
 
     match /pedidos/{orderId} {
-      allow create: if request.resource.data.keys().hasAll([
+  allow read: if isAdmin();
+  allow create: if request.resource.data.keys().hasAll([
         'perfumeId', 'perfumeName', 'brand', 'volumeMl', 'quantity',
         'unitPrice', 'customerName', 'contact', 'payment', 'status',
         'createdAt', 'source'
