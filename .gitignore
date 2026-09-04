@@ -1,0 +1,16 @@
+# Ambiente
+.env
+
+# Dependências
+node_modules
+
+# Build
+dist
+dist-ssr
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log

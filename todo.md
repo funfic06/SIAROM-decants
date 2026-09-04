@@ -1,0 +1,99 @@
+# Checklist de integração do admin SIAROM
+
+- [x] Auditar o `admin.html` anexado e identificar como perfumes, disponibilidade e pedidos são persistidos.
+- [x] Comparar o modelo de dados do admin com o catálogo atual e definir uma fonte compartilhada.
+- [x] Verificar riscos de segurança do acesso administrativo e evitar credenciais expostas no frontend.
+- [x] Usar o projeto Firebase `siarom-decantshop` e o documento `dados/principal` como fonte oficial nesta etapa.
+- [x] Preservar a compatibilidade com campos existentes, incluindo `perfumes`, `prices`, `orders`, `available` e estoque.
+- [x] Definir como pedidos do catálogo serão anexados ao perfume correspondente sem sobrescrever pedidos existentes.
+- [x] Implementar cadastro, edição, remoção e alternância de disponibilidade dos perfumes.
+- [x] Implementar a visualização e atualização de status dos pedidos registrados pelos clientes.
+- [x] Conectar catálogo e admin para refletir alterações sem dados divergentes.
+- [x] Testar os fluxos públicos em desktop, incluindo carregamento real do Firestore, catálogo vazio e rota individual por slug legível.
+- [ ] Criar o usuário administrativo, o documento `admins/{UID}` e aplicar `firestore.rules` no Console Firebase.
+- [ ] Executar o teste final autenticado de criar, publicar, remover e atualizar um pedido no ambiente real.
+- [x] Tornar a entrada do admin claramente identificável como área reservada, sem expor controles de gestão no catálogo público.
+- [x] Corrigir o enquadramento das imagens de perfume para mostrar o frasco inteiro sem cortes.
+- [x] Remover o rótulo “ao vivo” e eliminar referências a coleção sazonal na capa.
+- [x] Simplificar o formulário de pedido e incluir APC + 40 ml com limite de uma unidade por frasco.
+- [x] Validar a nova capa simples, o pedido APC e as telas admin em desktop e mobile.
+- [x] Identificar o erro real retornado ao tentar criar um pedido na coleção `pedidos`.
+- [x] Comparar a estrutura enviada pelo catálogo com `firestore.rules` e as regras atualmente aplicadas no projeto.
+- [x] Corrigir o diagnóstico da criação do pedido e exibir uma mensagem útil quando o Firebase bloquear a operação.
+- [ ] Validar pedido comum, APC + 40 ml e leitura do pedido no admin sem duplicação.
+- [x] Confirmar que o `admin.html` legado lê somente `dados/principal.perfumes[].orders`.
+- [x] Fazer o painel administrativo usado pelo usuário ler também a coleção `pedidos`.
+- [x] Manter pedidos legados visíveis e evitar duplicações durante a migração.
+- [x] Validar o alias `/admin.html` e a entrada protegida do painel novo.
+- [ ] Testar pedido novo, pedido APC e atualização de status no painel correto com credenciais reais.
+- [ ] Identificar o código de erro retornado pelo login `raficroeis@gmail.com` sem expor a senha.
+- [ ] Confirmar a ativação do provedor Email/Password no projeto Firebase correto.
+- [ ] Confirmar que o usuário administrativo existe no Authentication e possui documento `admins/{UID}`.
+- [ ] Melhorar mensagens para diferenciar usuário inexistente, senha incorreta, provedor desativado e usuário sem autorização.
+- [ ] Validar o acesso ao `/admin.html` após a configuração.
+- [x] Adicionar botão no admin para limpar pedidos com status entregue, preservando os demais.
+- [x] Tornar o texto de entrega e conservação editável por perfume no admin.
+- [x] Tornar a descrição principal da fragrância editável por perfume no admin.
+- [x] Substituir notas por até cinco acordes principais editáveis no admin.
+- [x] Remover intensidade e presença da ficha pública e exibir disponibilidade em ml.
+- [x] Incluir seleção obrigatória entre Pix e cartão de crédito no modal de pedido.
+- [x] Salvar a modalidade selecionada no documento de pedido do Firestore.
+- [x] Exibir o método de pagamento na fila de pedidos do admin.
+- [x] Validar compilação, formulário e compatibilidade visual sem impactar pedidos legados.
+- [ ] Remover o texto de arquivo e a assinatura visual sobreposta às imagens de cards e fichas.
+- [ ] Reposicionar a coluna de texto da ficha para acompanhar melhor a altura do frasco.
+- [ ] Validar cards e página individual em desktop e mobile após o ajuste.
+- [x] Trocar os rótulos de família por gênero no catálogo, filtros e navegação.
+- [x] Restringir o cadastro do admin a Compartilhável, Masculino e Feminino.
+- [x] Adaptar registros existentes para manter compatibilidade com a nova classificação.
+- [x] Validar os filtros de gênero em desktop e mobile.
+- [x] Contabilizar pedidos APC da coleção `pedidos` e dos registros legados para cada perfume.
+- [x] Bloquear a opção APC quando a quantidade atingir o limite configurado para o frasco.
+- [x] Mostrar no card administrativo a quantidade total de pedidos atuais e legados por perfume.
+- [x] Validar compilação, transação e estados visuais da correção APC.
+- [ ] Publicar novamente `firestore.rules` e abrir `/admin.html` uma vez para inicializar os contadores APC existentes.
+- [x] Identificar que a atualização para entregue estava passando desnecessariamente pela transação APC.
+- [x] Corrigir a atualização de status para não exigir mudança de contador APC fora de cancelamentos.
+- [x] Validar TypeScript e build das transições novo → entregue e novo → cancelado.
+- [ ] Confirmar em `/admin.html` que um pedido existente muda de novo para entregue após atualizar a versão.
+- [x] Corrigir a indisponibilidade de APC quando ainda não existir contador para o perfume.
+- [x] Preservar o bloqueio após a primeira reserva APC por frasco.
+- [x] Validar TypeScript e build do estado inicial e do limite de APC.
+- [ ] Publicar a nova versão de `firestore.rules` e testar uma primeira reserva APC seguida de uma segunda tentativa.
+- [x] Confirmar a negação da criação inicial de `apcInventory` nas regras atualmente publicadas.
+- [x] Ajustar o registro APC para não exigir uma gravação pública auxiliar incompatível.
+- [x] Manter a limitação de APC com um único documento de pedido reservado por perfume.
+- [x] Validar TypeScript e build do novo fluxo de reserva APC.
+- [ ] Publicar novamente `firestore.rules` e registrar o primeiro APC no Firebase para validar o envio real.
+- [x] Escutar em tempo real os marcadores públicos de reserva APC.
+- [x] Desabilitar APC na ficha pública quando existir a reserva do perfume.
+- [x] Impedir a abertura do formulário APC reservado e validar TypeScript e build da atualização automática.
+- [ ] Publicar `firestore.rules` atualizado e abrir `/admin.html` uma vez para criar o marcador da reserva APC já existente.
+- [x] Integrar a reserva APC atual ao cálculo público de estoque pelo marcador `apcStatus`.
+- [x] Descontar o volume APC de 40 ml sem consultar dados pessoais do pedido.
+- [x] Validar TypeScript e build do cálculo de disponibilidade atualizado.
+- [ ] Confirmar na ficha publicada que Blind Ecstasy passou de 100 ml para 60 ml após atualizar a página.
+- [x] Criar um resumo público de volume reservado que inclua pedidos comuns e APC.
+- [x] Atualizar o resumo na mesma operação em que um pedido é registrado.
+- [x] Descontar o resumo de volume do estoque exibido sem revelar dados pessoais.
+- [x] Validar TypeScript e build do cálculo para pedidos comuns e APC.
+- [ ] Publicar `firestore.rules` atualizado e abrir `/admin.html` para consolidar o pedido de 3 ml e a reserva APC existentes em 43 ml usados.
+- [x] Identificar e eliminar o saldo residual de 40 ml quando não houver pedidos ativos.
+- [x] Recalcular o resumo `stockStatus` pelo conjunto de pedidos atuais e legados não cancelados.
+- [x] Remover marcadores APC sem pedido correspondente e liberar a opção somente nesses casos.
+- [x] Validar por TypeScript e build que o cenário vazio zera o resumo; o teste autenticado no Firestore será confirmado ao abrir o admin.
+- [x] Diagnosticar que há um marcador residual em `apcStatus/blind-ecstasy-1786797989063` enquanto o resumo `stockStatus` está vazio.
+- [x] Adicionar uma ação explícita no admin para recalcular estoque e reservas APC.
+- [x] Exibir o resultado da recalibração, incluindo a quantidade de pedidos ativos considerada.
+- [x] Identificar que a leitura de `pedidos/apc-{id}` no navegador era bloqueada pelas regras privadas antes da transação APC.
+- [x] Remover essa leitura: o cliente verifica apenas o marcador público `apcStatus`, e as regras continuam validando a criação atômica.
+- [x] Validar TypeScript e build da criação APC sem leitura do pedido privado.
+- [ ] Atualizar a versão do catálogo e testar uma primeira reserva APC no Firebase.
+- [x] Inspecionar a grade responsiva da ficha de perfume em tela vertical.
+- [x] Empilhar a imagem e o conteúdo sem sobreposição em celulares.
+- [x] Validar visualmente a ficha de Khamrah em viewport vertical de 375 px.
+- [x] Testar busca, filtros de gênero e abertura de fichas no catálogo público.
+- [x] Testar seleção de volumes e APC reservado.
+- [x] Testar validações obrigatórias do pedido sem enviar ou criar uma reserva de teste no Firebase.
+- [x] Revisar navegação e apresentação em desktop e celular.
+- [x] Registrar somente problemas confirmados ou lacunas funcionais observadas.

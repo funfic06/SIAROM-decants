@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /dados/principal {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /pedidos/{orderId} {
+      allow create: if request.resource.data.keys().hasAll([
+        'perfumeId', 'perfumeName', 'brand', 'volumeMl', 'quantity',
+        'unitPrice', 'customerName', 'contact', 'payment', 'status',
+        'createdAt', 'source'
+      ])
+      && request.resource.data.source == 'catalogo'
+      && request.resource.data.status == 'novo'
+      && request.resource.data.customerName is string
+      && request.resource.data.customerName.size() > 0
+      && request.resource.data.contact is string
+      && request.resource.data.contact.size() > 0
+      && request.resource.data.volumeMl is number
+      && request.resource.data.volumeMl > 0
+      && request.resource.data.quantity is number
+      && request.resource.data.quantity > 0
+      && request.resource.data.payment in ['pix', 'cartao_credito']
+      && getAfter(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId)).data.perfumeId
+        == request.resource.data.perfumeId
+      && getAfter(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId)).data.lastOrderId == orderId
+      && ((exists(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId))
+          && getAfter(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId)).data.reservedMl
+            == get(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId)).data.reservedMl
+              + request.resource.data.volumeMl * request.resource.data.quantity)
+        || (!exists(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId))
+          && getAfter(/databases/$(database)/documents/stockStatus/$(request.resource.data.perfumeId)).data.reservedMl
+            == request.resource.data.volumeMl * request.resource.data.quantity))
+      && (!request.resource.data.keys().hasAny(['isApc'])
+        || request.resource.data.isApc == false
+        || (request.resource.data.isApc == true
+          && orderId == 'apc-' + request.resource.data.perfumeId
+          && !exists(/databases/$(database)/documents/apcStatus/$(request.resource.data.perfumeId))
+          && getAfter(/databases/$(database)/documents/apcStatus/$(request.resource.data.perfumeId)).data.perfumeId
+            == request.resource.data.perfumeId
+          && getAfter(/databases/$(database)/documents/apcStatus/$(request.resource.data.perfumeId)).data.reserved == true
+          && getAfter(/databases/$(database)/documents/apcStatus/$(request.resource.data.perfumeId)).data.orderId == orderId));
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /stockStatus/{perfumeId} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        || (request.resource.data.perfumeId == perfumeId
+          && request.resource.data.reservedMl is number
+          && request.resource.data.reservedMl >= 0
+          && request.resource.data.lastOrderId is string
+          && getAfter(/databases/$(database)/documents/pedidos/$(request.resource.data.lastOrderId)).data.perfumeId == perfumeId
+          && getAfter(/databases/$(database)/documents/pedidos/$(request.resource.data.lastOrderId)).data.status == 'novo');
+      allow delete: if isAdmin();
+    }
+
+    match /apcStatus/{perfumeId} {
+      allow read: if true;
+      allow create: if isAdmin()
+        || (request.resource.data.perfumeId == perfumeId
+          && request.resource.data.reserved == true
+          && request.resource.data.orderId == 'apc-' + perfumeId
+          && getAfter(/databases/$(database)/documents/pedidos/$(request.resource.data.orderId)).data.isApc == true
+          && getAfter(/databases/$(database)/documents/pedidos/$(request.resource.data.orderId)).data.perfumeId == perfumeId);
+      allow update, delete: if isAdmin();
+    }
+
+    match /admins/{userId} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
+      allow write: if false;
+    }
+  }
+}

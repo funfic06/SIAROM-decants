@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 300" role="img" aria-labelledby="title desc">
+  <title id="title">Selo SIAROM</title>
+  <desc id="desc">Selo circular dourado da marca SIAROM em fundo carvão.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2d59b"/>
+      <stop offset=".5" stop-color="#b78a45"/>
+      <stop offset="1" stop-color="#7d5529"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="300" rx="120" fill="#201f1d"/>
+  <ellipse cx="120" cy="135" rx="77" ry="94" fill="none" stroke="url(#gold)" stroke-width="3"/>
+  <ellipse cx="120" cy="135" rx="66" ry="82" fill="none" stroke="#d4b77d" stroke-opacity=".45"/>
+  <path d="M120 69 C108 95 93 111 93 142 C93 165 106 183 120 183 C134 183 147 165 147 142 C147 111 132 95 120 69Z" fill="none" stroke="url(#gold)" stroke-width="3"/>
+  <path d="M120 84 V174 M105 119 H135" stroke="#d4b77d" stroke-opacity=".75" stroke-width="2"/>
+  <circle cx="120" cy="135" r="7" fill="#d4b77d"/>
+  <text x="120" y="235" text-anchor="middle" fill="#f2eee5" font-family="Georgia, serif" font-size="22" letter-spacing="5">SIAROM</text>
+  <text x="120" y="253" text-anchor="middle" fill="#d4b77d" font-family="Arial, sans-serif" font-size="8" letter-spacing="3">RAFFINEMENT PARFUM</text>
+</svg>
