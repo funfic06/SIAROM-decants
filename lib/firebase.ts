@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, orderBy, query, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
 
 export const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCzrmQ5YK3aaxek0xVclp9vxYSEX7NlUag",
@@ -65,10 +65,20 @@ export async function getAdminProfile(user: User) {
 }
 
 export function subscribeOrders(onData: (orders: CustomerOrder[], fromServer: boolean) => void, onError: (error: Error) => void): Unsubscribe {
-  return onSnapshot(query(ordersRef, orderBy("createdAt", "desc")), (snapshot) => {
-    onData(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as CustomerOrder)), !snapshot.metadata.hasPendingWrites);
+  return onSnapshot(ordersRef, (snapshot) => {
+    const orders = snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    } as CustomerOrder));
+
+    orders.sort((left, right) =>
+      String(right.createdAt || "").localeCompare(String(left.createdAt || ""))
+    );
+
+    onData(orders, !snapshot.metadata.hasPendingWrites);
   }, onError);
 }
+
 
 export function subscribeApcStatus(onData: (status: Record<string, ApcStatus>) => void, onError: (error: Error) => void): Unsubscribe {
   return onSnapshot(apcStatusRef, (snapshot) => {
