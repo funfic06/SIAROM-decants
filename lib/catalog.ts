@@ -102,6 +102,13 @@ function numberValue(value: unknown) {
   const parsed = Number.parseFloat(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
 }
+
+function numberOrDefault(value: unknown, fallback: number) {
+  const normalized = String(value ?? "").trim().replace(",", ".");
+  if (!normalized) return fallback;
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 function slugify(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
@@ -131,7 +138,7 @@ export function adaptPerfume(raw: Record<string, unknown>, index = 0, apcStatus?
   const legacyUsedMl = orders.reduce((sum, order) => sum + numberValue(order.ml), 0);
   const currentReservedMl = stockStatus ? numberValue(stockStatus.reservedMl) : apcStatus?.reserved ? numberValue(apcStatus.volumeMl) || apcMl : 0;
   const usedMl = stockStatus ? currentReservedMl : legacyUsedMl + currentReservedMl;
-  const apcFee = numberValue(raw.apcFrasco) || 10;
+  const apcFee = numberOrDefault(raw.apcFrasco, 10);
   const apcLimit = numberValue(raw.apcLimit) || 1;
   const apcUsed = apcStatus?.reserved ? apcLimit : orders.filter((order) => order.isApc).length;
   const apcPrice = pricePerMl > 0 ? apcMl * pricePerMl + apcFee : 0;
@@ -155,8 +162,21 @@ export function formatPrice(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
+export type WhatsappMessageOrder = {
+  id?: unknown;
+  legacyRef?: unknown;
+  customerName?: unknown;
+  name?: unknown;
+  volumeMl?: unknown;
+  ml?: unknown;
+  quantity?: unknown;
+  isApc?: unknown;
+  status?: unknown;
+  createdAt?: unknown;
+};
+
 // Gera a mensagem pronta de WhatsApp para um perfume, a partir dos mesmos dados usados na ficha do admin.
-export function buildWhatsappMessage(raw: Record<string, unknown>) {
+export function buildWhatsappMessage(raw: Record<string, unknown>, orders: WhatsappMessageOrder[] = []) {
   const name = rawText(raw.name) || "Perfume sem nome";
   const brand = rawText(raw.brand);
   const obs = rawText(raw.obs);
@@ -167,7 +187,7 @@ export function buildWhatsappMessage(raw: Record<string, unknown>) {
   const recave = numberValue(raw.recavePrice) || 8;
   const hasApc = raw.hasApc === true;
   const apcMl = numberValue(raw.apcMl) || 40;
-  const apcFrasco = numberValue(raw.apcFrasco) || 10;
+  const apcFrasco = numberOrDefault(raw.apcFrasco, 10);
   const apcPrice = pricePerMl > 0 ? apcMl * pricePerMl + apcFrasco : 0;
   const rawPrices = (raw.prices && typeof raw.prices === "object" ? raw.prices : {}) as Record<string, unknown>;
   const priceFor = (ml: number) => {
@@ -182,7 +202,7 @@ export function buildWhatsappMessage(raw: Record<string, unknown>) {
 
   const priceParts: string[] = [];
   if (pricePerMl > 0) priceParts.push(`R$ ${pricePerMl.toFixed(2).replace(".", ",")}/ml`);
-  if (recave > 0 && pricePerMl > 0) priceParts.push(`R$ ${recave.toFixed(2).replace(".", ",")} (recave)`);
+  if (recave > 0 && pricePerMl > 0) priceParts.push(`R$ ${recave.toFixed(2).replace(".", ",")} (recrave)`);
   if (priceParts.length) lines.push(priceParts.join(" + "));
   if (hasApc && apcPrice > 0) lines.push(`APC + ${apcMl} ml = ${formatPrice(apcPrice)}`);
   lines.push("");
@@ -195,8 +215,45 @@ export function buildWhatsappMessage(raw: Record<string, unknown>) {
     if (price > 0) lines.push(`  · ${ml} ml: ${formatPrice(price)}`);
   });
   if (hasApc && apcPrice > 0) lines.push(`  · APC + ${apcMl} ml: ${formatPrice(apcPrice)}`);
+
+  const rawOrders = Array.isArray(raw.orders) ? raw.orders.map((order) => {
+    const item = order as Record<string, unknown>;
+    return {
+      id: `legacy-${String(item.id || "")}`,
+      customerName: item.name,
+      volumeMl: item.ml,
+      quantity: 1,
+      isApc: item.isApc,
+      status: item.entregue ? "entregue" : "novo",
+    } satisfies WhatsappMessageOrder;
+  }) : [];
+  const sourceOrders = orders.length ? orders : rawOrders;
+  const seenOrderIds = new Set<string>();
+  const activeOrders = sourceOrders.filter((order) => {
+    if (String(order.status || "novo") === "cancelado") return false;
+    const orderId = String(order.legacyRef || order.id || "");
+    if (!orderId) return true;
+    if (seenOrderIds.has(orderId)) return false;
+    seenOrderIds.add(orderId);
+    return true;
+  });
+  const reservedMl = activeOrders.reduce((sum, order) => sum + numberValue(order.volumeMl ?? order.ml) * Math.max(1, numberValue(order.quantity) || 1), 0);
+  const remainingMl = totalMl > 0 ? Math.max(0, totalMl - reservedMl) : 0;
+
+  if (activeOrders.length) {
+    lines.push("");
+    lines.push("Pedidos registrados:");
+    activeOrders.forEach((order) => {
+      const customerName = rawText(order.customerName ?? order.name) || "Nome não informado";
+      const volumeMl = numberValue(order.volumeMl ?? order.ml);
+      const quantity = Math.max(1, numberValue(order.quantity) || 1);
+      const volumeLabel = order.isApc ? `APC + ${volumeMl} ml` : `${volumeMl} ml`;
+      lines.push(`  · ${customerName}: ${volumeLabel}${quantity > 1 ? ` · x${quantity}` : ""}`);
+    });
+  }
+
   lines.push("________________");
-  if (totalMl > 0) lines.push(`${totalMl} ml disponíveis`);
+  if (totalMl > 0) lines.push(`${remainingMl} ml restantes disponíveis para venda`);
   lines.push("");
   lines.push(deliveryText);
 

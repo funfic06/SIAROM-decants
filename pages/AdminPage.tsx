@@ -45,7 +45,7 @@ function formFromRaw(raw: Record<string, unknown>): PerfumeForm {
     accords: Array.isArray(raw.accords) ? raw.accords.map(text).slice(0, 5).concat(["", "", "", "", ""]).slice(0, 5) : emptyForm().accords,
     deliveryText: text(raw.deliveryText || defaultDeliveryText), referenceUrl: text(raw.referenceUrl),
     available: raw.available !== false, hasApc: raw.hasApc === true,
-    apcMl: Number(raw.apcMl) || 40, apcFrasco: text(raw.apcFrasco || "10,00"), apcLimit: text(raw.apcLimit || "1"),
+    apcMl: Number(raw.apcMl) || 40, apcFrasco: text(raw.apcFrasco === undefined || raw.apcFrasco === null || raw.apcFrasco === "" ? "10,00" : raw.apcFrasco), apcLimit: text(raw.apcLimit || "1"),
     prices: { ...emptyForm().prices, ...((raw.prices || {}) as Record<string, string | null>) },
     customVolumes: Array.isArray(raw.customVolumes) ? raw.customVolumes.map(text).join(", ") : "",
     orders: Array.isArray(raw.orders) ? raw.orders : [],
@@ -112,8 +112,6 @@ export default function AdminPage() {
   const [notice, setNotice] = useState("");
   const [messagePerfume, setMessagePerfume] = useState<Record<string, unknown> | null>(null);
 
-  const whatsappMessage = useMemo(() => (messagePerfume ? buildWhatsappMessage(messagePerfume) : ""), [messagePerfume]);
-
   const copyWhatsappMessage = async () => {
     try {
       await navigator.clipboard.writeText(whatsappMessage);
@@ -147,6 +145,17 @@ export default function AdminPage() {
       return { id: `legacy-${perfumeId}-${text(item.id)}`, perfumeId, perfumeName, brand, volumeMl: Number(item.ml) || 0, quantity: 1, unitPrice: 0, customerName: text(item.name), contact: "", payment: text(item.pagamento), status: item.entregue ? "entregue" as const : "novo" as const, createdAt: "", source: "catalogo" as const, isApc: Boolean(item.isApc), legacy: true };
     });
   }), [rawPerfumes]);
+
+  const messageOrders = useMemo(() => {
+    if (!messagePerfume) return [];
+    const perfumeId = text(messagePerfume.id) || text(messagePerfume.name);
+    const perfumeName = text(messagePerfume.name);
+    return [
+      ...orders.filter((order) => order.perfumeId === perfumeId || order.perfumeName === perfumeName),
+      ...legacyOrders.filter((order) => order.perfumeId === perfumeId || order.perfumeName === perfumeName),
+    ];
+  }, [messagePerfume, orders, legacyOrders]);
+  const whatsappMessage = useMemo(() => (messagePerfume ? buildWhatsappMessage(messagePerfume, messageOrders) : ""), [messagePerfume, messageOrders]);
 
   useEffect(() => {
     if (!authorized || !ordersReady) return;
