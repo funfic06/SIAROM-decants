@@ -1,9 +1,9 @@
 // Atelier Noir — sala de controle SIAROM: fichas sóbrias, filetes finos e gestão direta da curadoria.
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive } from "lucide-react";
 import { Link } from "wouter";
 import { useCatalog } from "@/contexts/CatalogContext";
-import { createCustomerOrder, deleteCustomerOrders, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, syncApcStatus, syncStockStatus, updateCustomerOrderStatus, type CustomerOrder } from "@/lib/firebase";
+import { createCustomerOrder, createRemessa, deleteCustomerOrders, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, subscribeRemessas, syncApcStatus, syncStockStatus, updateCustomerOrderStatus, type CustomerOrder, type Remessa } from "@/lib/firebase";
 import { buildWhatsappMessage, logoMark, normalizeGender } from "@/lib/catalog";
 import type { User } from "firebase/auth";
 
@@ -35,6 +35,11 @@ function parseVolumeList(value: string) {
 }
 function statusLabel(value: string) { return ({ novo: "Novo", confirmado: "Confirmado", separado: "Separado", entregue: "Entregue", cancelado: "Cancelado" } as Record<string, string>)[value] || value; }
 function paymentLabel(value: string) { return ({ pix: "Pix", cartao_credito: "Cartão de crédito" } as Record<string, string>)[value] || (value ? value : "Pagamento a definir"); }
+function formatDate(iso: string) {
+  if (!iso) return "—";
+  try { return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)); }
+  catch { return iso; }
+}
 
 function formFromRaw(raw: Record<string, unknown>): PerfumeForm {
   return {
@@ -92,6 +97,189 @@ function PerfumeEditor({ initial, onCancel, onSave, saving }: { initial: Perfume
   return <section className="admin-editor"><div className="admin-editor-heading"><div><div className="admin-eyebrow"><span /> {form.id ? "editar ficha" : "nova ficha"}</div><h2>{form.id ? form.name || "Editar perfume" : "Adicionar perfume"}</h2></div><button className="admin-icon-button" onClick={onCancel} aria-label="Fechar editor"><X size={18} /></button></div><div className="admin-form-grid"><label><span>Nome do perfume *</span><input value={form.name} onChange={(event) => set("name", event.target.value)} placeholder="Ex.: Oud Satin Mood" /></label><label><span>Marca *</span><input value={form.brand} onChange={(event) => set("brand", event.target.value)} placeholder="Ex.: Maison Francis Kurkdjian" /></label><label><span>Gênero *</span><select value={form.type} required onChange={(event) => set("type", event.target.value)}><option value="" disabled>Selecione o gênero</option>{genders.map((gender) => <option key={gender} value={gender}>{gender}</option>)}</select></label><label><span>Preço por ml (R$)</span><input value={form.pricePerMl} onChange={(event) => set("pricePerMl", event.target.value)} placeholder="Ex.: 5,50" /></label><label><span>Taxa de recave (R$)</span><input value={form.recavePrice} onChange={(event) => set("recavePrice", event.target.value)} placeholder="8,00" /></label><label><span>Total disponível (ml)</span><input type="number" min="0" value={form.totalMl} onChange={(event) => set("totalMl", event.target.value)} placeholder="Ex.: 100" /></label><label className="admin-form-wide"><span>Volumes disponíveis (ml)</span><input value={form.customVolumes} onChange={(event) => set("customVolumes", event.target.value)} placeholder="Ex.: 3, 7, 10, 25" /><small>Opcional. Separe os volumes por vírgula. Se deixar vazio, serão usados 3, 7, 10, 15, 20 e 30 ml.</small></label><label className="admin-form-wide"><span>URL da imagem</span><input type="url" value={form.imageUrl} onChange={(event) => set("imageUrl", event.target.value)} placeholder="https://…" /></label><label className="admin-form-wide"><span>Observação</span><textarea value={form.obs} onChange={(event) => set("obs", event.target.value)} placeholder="Lote, conservação ou observação para a equipe." /></label></div><div className="admin-form-section admin-copy-section"><div><span className="admin-form-kicker">Texto da ficha</span><p>Personalize o resumo e a descrição que aparecerão na página do perfume.</p></div><label className="admin-form-wide"><span>Resumo curto</span><input value={form.shortDescription} onChange={(event) => set("shortDescription", event.target.value)} placeholder="Ex.: Um floral luminoso e confortável." /></label><label className="admin-form-wide"><span>Descrição principal</span><textarea value={form.description} onChange={(event) => set("description", event.target.value)} placeholder="Texto completo da fragrância para a página individual." /></label><label className="admin-form-wide"><span>Entrega e conservação</span><textarea value={form.deliveryText} onChange={(event) => set("deliveryText", event.target.value)} /></label><label className="admin-form-wide"><span>Link de referência (opcional)</span><input type="url" value={form.referenceUrl} onChange={(event) => set("referenceUrl", event.target.value)} placeholder="Ex.: https://www.fragrantica.com.br/perfume/…" /></label></div><div className="admin-form-section admin-accord-section"><div><span className="admin-form-kicker">Cinco principais acordes</span><p>Preencha até cinco acordes para exibir na página pública.</p></div><div className="admin-accord-grid">{form.accords.map((accord, index) => <label key={index}><span>Acorde {index + 1}</span><input value={accord} onChange={(event) => setAccord(index, event.target.value)} placeholder={`Ex.: ${["Amadeirado", "Âmbar", "Floral", "Cítrico", "Almiscarado"][index]}`} /></label>)}</div></div><div className="admin-form-section"><div><span className="admin-form-kicker">Valores por volume</span><p>Deixe vazio para calcular pelo preço por ml.</p></div><div className="admin-price-grid">{(parseVolumeList(form.customVolumes).length ? parseVolumeList(form.customVolumes) : volumes).map((ml) => <label key={ml}><span>{ml} ml</span><input value={form.prices[ml] || ""} onChange={(event) => setPrice(ml, event.target.value)} placeholder={form.pricePerMl ? money(Number.parseFloat(form.pricePerMl.replace(",", ".")) * ml) : "—"} /></label>)}</div></div><div className="admin-form-section apc-editor-section"><div><span className="admin-form-kicker">Opção APC</span><p>Inclui o frasco e o volume configurado. O limite padrão é de uma unidade por frasco.</p></div><label className="admin-switch apc-toggle"><input type="checkbox" checked={form.hasApc} onChange={(event) => set("hasApc", event.target.checked)} /><span><strong>Oferecer APC + {form.apcMl || 40} ml</strong><small>O cliente verá esta opção junto aos volumes do perfume.</small></span></label>{form.hasApc && <div className="admin-apc-fields"><label><span>Volume APC (ml)</span><input type="number" min="1" value={form.apcMl} onChange={(event) => set("apcMl", Number(event.target.value) || 40)} /></label><label><span>Valor do frasco (R$)</span><input value={form.apcFrasco} onChange={(event) => set("apcFrasco", event.target.value)} placeholder="10,00" /></label><label><span>Limite por frasco</span><input type="number" min="1" value={form.apcLimit} onChange={(event) => set("apcLimit", event.target.value || "1")} /></label></div>}</div><label className="admin-switch"><input type="checkbox" checked={form.available} onChange={(event) => set("available", event.target.checked)} /><span><strong>Publicar no catálogo</strong><small>Quando desativado, o perfume fica invisível para clientes, mas permanece salvo.</small></span></label><div className="admin-editor-actions"><button className="admin-secondary-button" onClick={onCancel}>Cancelar</button><button className="admin-primary-button" disabled={saving || !form.name.trim() || !form.brand.trim() || !form.type} onClick={() => onSave(form)}>{saving ? "Salvando…" : "Salvar ficha"}<Check size={16} /></button></div></section>;
 }
 
+// ─── Criador de remessa ────────────────────────────────────────────────────────
+function RemessaCreator({
+  orders,
+  onClose,
+  onCreated,
+}: {
+  orders: (CustomerOrder & { legacy?: boolean })[];
+  onClose: () => void;
+  onCreated: (notice: string) => void;
+}) {
+  const activeOrders = orders.filter(
+    (o) => !o.legacy && o.id && (o.status === "novo" || o.status === "confirmado" || o.status === "separado")
+  );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const selectedOrders = activeOrders.filter((o) => selected.has(o.id!));
+  const customerNames = Array.from(new Set(selectedOrders.map((o) => o.customerName).filter(Boolean)));
+
+  const confirm = async () => {
+    if (!selected.size) return;
+    setSaving(true);
+    setError("");
+    try {
+      const orderIds = Array.from(selected);
+      const customerName = customerNames.join(", ") || "Cliente";
+      const orderSummaries = selectedOrders.map((o) => ({
+        orderId: o.id!,
+        perfumeName: o.perfumeName,
+        volumeMl: o.volumeMl,
+        isApc: o.isApc,
+      }));
+      await createRemessa(orderIds, customerName, orderSummaries);
+      onCreated(`Remessa criada com ${orderIds.length} pedido(s). Status atualizado para "Entregue".`);
+    } catch {
+      setError("Não foi possível criar a remessa. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="admin-confirm-dialog" style={{ maxWidth: 560, width: "100%" }} role="dialog" aria-modal="true" aria-labelledby="remessa-title">
+        <div className="admin-editor-heading">
+          <div>
+            <div className="admin-eyebrow"><span /> nova remessa</div>
+            <h2 id="remessa-title">Selecionar pedidos da caixa</h2>
+          </div>
+          <button className="admin-icon-button" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
+        </div>
+
+        {activeOrders.length === 0 ? (
+          <p style={{ color: "var(--muted)", padding: "1rem 0" }}>
+            Nenhum pedido ativo (novo, confirmado ou separado) disponível para agrupar.
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
+              Marque os pedidos que foram juntos na mesma caixa. Eles serão marcados como <strong>Entregue</strong> automaticamente.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: 340, overflowY: "auto" }}>
+              {activeOrders.map((order) => (
+                <label
+                  key={order.id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "0.75rem",
+                    padding: "0.6rem 0.75rem", borderRadius: 6, cursor: "pointer",
+                    background: selected.has(order.id!) ? "var(--surface-raised, #f5f5f0)" : "transparent",
+                    border: "1px solid",
+                    borderColor: selected.has(order.id!) ? "var(--accent, #222)" : "var(--border, #e0e0e0)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(order.id!)}
+                    onChange={() => toggle(order.id!)}
+                    style={{ accentColor: "var(--accent, #222)", width: 16, height: 16, flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>{order.customerName || "Cliente"}</div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                      {order.perfumeName} · {order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}
+                      {order.quantity > 1 ? ` · x${order.quantity}` : ""}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.75rem", padding: "2px 8px", borderRadius: 99,
+                      background: "var(--surface-raised, #f0f0eb)", color: "var(--muted)",
+                    }}
+                  >
+                    {statusLabel(order.status)}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {selected.size > 0 && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.82rem", color: "var(--muted)" }}>
+                <strong>{selected.size}</strong> pedido(s) selecionado(s)
+                {customerNames.length > 0 && <> · cliente: <strong>{customerNames.join(", ")}</strong></>}
+              </div>
+            )}
+          </>
+        )}
+
+        {error && <div className="admin-error" style={{ marginTop: "0.75rem" }}>{error}</div>}
+
+        <div className="admin-confirm-actions" style={{ marginTop: "1.25rem" }}>
+          <button className="admin-secondary-button" onClick={onClose}>Cancelar</button>
+          <button
+            className="admin-primary-button"
+            disabled={selected.size === 0 || saving}
+            onClick={() => void confirm()}
+          >
+            <Archive size={15} /> {saving ? "Criando remessa…" : `Criar remessa (${selected.size})`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Lista de remessas ────────────────────────────────────────────────────────
+function RemessasList({ remessas }: { remessas: Remessa[] }) {
+  if (remessas.length === 0) {
+    return (
+      <div className="admin-empty">
+        Nenhuma remessa criada ainda. Use "Nova remessa" para agrupar pedidos de uma caixa.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      {remessas.map((remessa) => (
+        <article
+          key={remessa.id}
+          style={{
+            border: "1px solid var(--border, #e0e0e0)", borderRadius: 8,
+            padding: "0.85rem 1rem", background: "var(--surface, #fff)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <div>
+              <strong style={{ fontSize: "0.92rem" }}>{remessa.customerName}</strong>
+              <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 2 }}>
+                {formatDate(remessa.createdAt)} · {remessa.orderIds.length} pedido(s)
+              </div>
+            </div>
+            <span
+              style={{
+                fontSize: "0.75rem", padding: "3px 10px", borderRadius: 99,
+                background: "var(--surface-raised, #f0f0eb)", color: "var(--muted)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Entregue
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            {remessa.orderSummaries.map((summary) => (
+              <div key={summary.orderId} style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
+                · {summary.perfumeName} — {summary.isApc ? `APC + ${summary.volumeMl} ml` : `${summary.volumeMl} ml`}
+              </div>
+            ))}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { rawPerfumes, saveRawPerfumes, isLive, syncError } = useCatalog();
   const [user, setUser] = useState<User | null>(null);
@@ -101,7 +289,8 @@ export default function AdminPage() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [ordersReady, setOrdersReady] = useState(false);
   const [ordersError, setOrdersError] = useState("");
-  const [tab, setTab] = useState<"perfumes" | "pedidos">("perfumes");
+  const [remessas, setRemessas] = useState<Remessa[]>([]);
+  const [tab, setTab] = useState<"perfumes" | "pedidos" | "remessas">("perfumes");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [editing, setEditing] = useState<PerfumeForm | null>(null);
@@ -109,6 +298,7 @@ export default function AdminPage() {
   const [migrating, setMigrating] = useState(false);
   const [recalibrating, setRecalibrating] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [remessaCreatorOpen, setRemessaCreatorOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [messagePerfume, setMessagePerfume] = useState<Record<string, unknown> | null>(null);
 
@@ -136,6 +326,14 @@ export default function AdminPage() {
       setOrdersReady(false);
       setOrdersError(`Não foi possível ler a coleção de pedidos${code}. Verifique as regras do Firestore e o documento admins/{UID}.`);
     });
+  }, [authorized]);
+
+  useEffect(() => {
+    if (!authorized) return;
+    return subscribeRemessas(
+      (next) => setRemessas(next),
+      (error) => console.error("Erro ao carregar remessas:", error)
+    );
   }, [authorized]);
 
   const legacyOrders = useMemo(() => rawPerfumes.flatMap((raw) => {
@@ -277,9 +475,193 @@ export default function AdminPage() {
     } catch { setClearDialogOpen(false); setOrdersError("Não foi possível limpar os pedidos entregues ou cancelados. Nenhum pedido ativo foi alterado."); }
   };
 
+  const allOrdersForRemessa = useMemo(
+    () => [...orders.map((o) => ({ ...o, legacy: false })), ...legacyOrders],
+    [orders, legacyOrders]
+  );
+
   if (!authReady) return <div className="admin-boot"><span className="loading-orbit" /> Verificando acesso…</div>;
   if (!user) return <AdminLogin onSignedIn={setUser} />;
   if (!authorized) return <div className="admin-login"><div className="admin-login-card"><div className="admin-seal"><img src={logoMark} alt="" /></div><div className="admin-eyebrow"><span /> acesso pendente</div><h1>Quase lá.</h1><p>{authMessage || "Este usuário precisa ser autorizado no Firebase para acessar o arquivo."}</p><div className="admin-security-note"><ShieldCheck size={18} /><span>Crie um documento em <strong>admins/{user.uid}</strong> com o campo <strong>role: "admin"</strong>.</span></div><button className="admin-secondary-button full" onClick={() => void signOutAdmin()}>Sair e tentar outra conta</button><Link href="/" className="admin-back-link"><ArrowLeft size={14} /> Voltar ao catálogo</Link></div></div>;
 
-  return <div className="admin-shell"><AdminHeader user={user} onLogout={() => void signOutAdmin()} /><main className="admin-main"><div className="admin-page-heading"><div><div className="admin-eyebrow"><span /> sala de controle</div><h1>O arquivo <em>SIAROM.</em></h1><p>Gerencie a curadoria e acompanhe o que está pronto para seguir até a pele.</p></div><div className="admin-header-actions"><button className="admin-secondary-button" onClick={() => void recalibrateAvailability()} disabled={recalibrating || !ordersReady}><RefreshCw size={15} /> {recalibrating ? "Recalibrando…" : "Recalibrar disponibilidade"}</button><div className="admin-live-status"><span className={isLive ? "live-dot" : "warning-dot"} />{isLive ? "sincronizado" : "verificando dados"}</div></div></div>{notice && <div className="admin-notice"><Check size={15} /> {notice}<button onClick={() => setNotice("")}><X size={14} /></button></div>}{syncError && <div className="admin-error">Catálogo: não foi possível ler o documento principal.</div>}{ordersError && <div className="admin-error">Pedidos: {ordersError}</div>}<div className="admin-stats"><div><Package size={17} /><span>Perfumes</span><strong>{rawPerfumes.length}</strong></div><div><Eye size={17} /><span>Publicados</span><strong>{rawPerfumes.filter((raw) => raw.available !== false).length}</strong></div><div><ArrowUpRight size={17} /><span>Pedidos novos</span><strong>{orders.filter((order) => order.status === "novo").length + legacyOrders.length}</strong></div><div><Check size={17} /><span>Entregues</span><strong>{deliveredOrderCount}</strong></div></div><div className="admin-tabs"><button className={tab === "perfumes" ? "active" : ""} onClick={() => { setTab("perfumes"); setQuery(""); }}><Package size={15} /> Perfumes</button><button className={tab === "pedidos" ? "active" : ""} onClick={() => { setTab("pedidos"); setQuery(""); }}><ArrowUpRight size={15} /> Pedidos <span>{orders.length + legacyOrders.length}</span></button></div>{editing && <PerfumeEditor initial={editing} onCancel={() => setEditing(null)} onSave={savePerfume} saving={saving} />}{!editing && tab === "perfumes" && <section className="admin-section"><div className="admin-section-heading"><div><span className="admin-form-kicker">Catálogo compartilhado</span><h2>Perfumes cadastrados</h2></div><button className="admin-primary-button" onClick={() => setEditing(emptyForm())}><Plus size={16} /> Novo perfume</button></div><label className="admin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome, marca ou gênero" /></label><div className="admin-perfume-list">{visiblePerfumes.length === 0 ? <div className="admin-empty">Nenhum perfume encontrado. Use “Novo perfume” para criar a primeira ficha.</div> : visiblePerfumes.map((raw) => { const perfumeId = text(raw.id) || text(raw.name); const totalOrders = orderTotals.get(perfumeId) || 0; return <article className="admin-perfume-row" key={perfumeId}><div className="admin-perfume-image">{text(raw.imageUrl) ? <img src={text(raw.imageUrl)} alt="" /> : <img src={logoMark} alt="" />}</div><div className="admin-perfume-info"><div className="admin-row-top"><div><h3>{text(raw.name) || "Sem nome"}</h3><p>{text(raw.brand)}{text(raw.type) ? ` · ${normalizeGender(raw.gender || raw.type || raw.family)}` : ""}</p></div><span className={`admin-availability ${raw.available === false ? "offline" : "online"}`}>{raw.available === false ? "Oculto" : "Publicado"}</span></div><div className="admin-row-meta"><span>R$ {text(raw.pricePerMl) || "—"}/ml</span><span>{totalOrders} pedido(s) no total</span><span>{raw.available === false ? "Não aparece no catálogo" : "Visível no catálogo"}</span></div><div className="admin-row-actions"><button onClick={() => setEditing(formFromRaw(raw))}><Edit3 size={14} /> Editar</button><button onClick={() => setMessagePerfume(raw)}><MessageCircle size={14} /> Mensagem</button><button onClick={() => void toggleAvailability(raw)}>{raw.available === false ? <><Eye size={14} /> Publicar</> : <><EyeOff size={14} /> Ocultar</>}</button><button className="danger" onClick={() => void removePerfume(perfumeId)}><Trash2 size={14} /> Remover</button></div></div></article>; })}</div></section>}{!editing && tab === "pedidos" && <section className="admin-section"><div className="admin-section-heading"><div><span className="admin-form-kicker">Fila de atendimento</span><h2>Pedidos registrados</h2></div><div className="admin-header-actions">{legacyOrders.length > 0 && <button className="admin-secondary-button" onClick={() => void migrateLegacyOrders()} disabled={migrating}><RefreshCw size={15} /> {migrating ? "Migrando…" : "Migrar legados"}</button>}{removableOrderCount > 0 && <button className="admin-secondary-button admin-clear-button" onClick={requestClearRemovable}><Trash2 size={15} /> Limpar entregues e cancelados</button>}<button className="admin-secondary-button" onClick={() => window.location.reload()}><RefreshCw size={15} /> Atualizar</button></div></div><div className="admin-order-toolbar"><label className="admin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente ou perfume" /></label><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="todos">Todos os status</option>{statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></div><div className="admin-orders-table"><div className="admin-order-head"><span>Cliente</span><span>Fragrância</span><span>Volume</span><span>Status</span></div>{visibleOrders.length === 0 ? <div className="admin-empty">Nenhum pedido encontrado.</div> : visibleOrders.map((order) => <div className="admin-order-row" key={order.id}><div><strong>{order.customerName}</strong><small>{order.contact || "Pedido legado"}</small></div><div><strong>{order.perfumeName}</strong><small>{order.brand}{order.legacy ? " · legado" : ""}</small><small className="order-payment">Pagamento: {paymentLabel(order.payment)}</small></div><span>{order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}{order.quantity > 1 ? ` · x${order.quantity}` : ""}</span><select className={`status-select status-${order.status}`} value={order.status} disabled={Boolean(order.legacy)} onChange={(event) => void updateStatus(order, event.target.value as CustomerOrder["status"])}>{statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></div>)}</div></section>}{clearDialogOpen && <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setClearDialogOpen(false)}><div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-delivered-title"><div className="admin-eyebrow"><span /> confirmação</div><h2 id="clear-delivered-title">Limpar pedidos concluídos?</h2><p>Você está prestes a remover <strong>{removableOrderCount} pedido(s)</strong> entregues ou cancelados. Pedidos novos, confirmados e separados serão preservados.</p><div className="admin-confirm-actions"><button className="admin-secondary-button" onClick={() => setClearDialogOpen(false)}>Cancelar</button><button className="admin-primary-button admin-danger-button" onClick={() => void clearRemovableOrders()}><Trash2 size={15} /> Confirmar limpeza</button></div></div></div>}{messagePerfume && <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setMessagePerfume(null)}><div className="admin-confirm-dialog admin-message-dialog" role="dialog" aria-modal="true" aria-labelledby="whatsapp-message-title"><div className="admin-editor-heading"><div><div className="admin-eyebrow"><span /> mensagem pronta</div><h2 id="whatsapp-message-title">{text(messagePerfume.name) || "Perfume"}</h2></div><button className="admin-icon-button" onClick={() => setMessagePerfume(null)} aria-label="Fechar"><X size={18} /></button></div><textarea className="admin-message-textarea" readOnly value={whatsappMessage} onFocus={(event) => event.target.select()} /><div className="admin-confirm-actions"><button className="admin-secondary-button" onClick={() => setMessagePerfume(null)}>Fechar</button><a className="admin-secondary-button" href={`https://wa.me/?text=${encodeURIComponent(whatsappMessage)}`} target="_blank" rel="noreferrer"><MessageCircle size={15} /> Abrir no WhatsApp</a><button className="admin-primary-button" onClick={() => void copyWhatsappMessage()}><Copy size={15} /> Copiar mensagem</button></div></div></div>}</main></div>;
+  return (
+    <div className="admin-shell">
+      <AdminHeader user={user} onLogout={() => void signOutAdmin()} />
+      <main className="admin-main">
+        <div className="admin-page-heading">
+          <div>
+            <div className="admin-eyebrow"><span /> sala de controle</div>
+            <h1>O arquivo <em>SIAROM.</em></h1>
+            <p>Gerencie a curadoria e acompanhe o que está pronto para seguir até a pele.</p>
+          </div>
+          <div className="admin-header-actions">
+            <button className="admin-secondary-button" onClick={() => void recalibrateAvailability()} disabled={recalibrating || !ordersReady}>
+              <RefreshCw size={15} /> {recalibrating ? "Recalibrando…" : "Recalibrar disponibilidade"}
+            </button>
+            <div className="admin-live-status">
+              <span className={isLive ? "live-dot" : "warning-dot"} />{isLive ? "sincronizado" : "verificando dados"}
+            </div>
+          </div>
+        </div>
+
+        {notice && <div className="admin-notice"><Check size={15} /> {notice}<button onClick={() => setNotice("")}><X size={14} /></button></div>}
+        {syncError && <div className="admin-error">Catálogo: não foi possível ler o documento principal.</div>}
+        {ordersError && <div className="admin-error">Pedidos: {ordersError}</div>}
+
+        <div className="admin-stats">
+          <div><Package size={17} /><span>Perfumes</span><strong>{rawPerfumes.length}</strong></div>
+          <div><Eye size={17} /><span>Publicados</span><strong>{rawPerfumes.filter((raw) => raw.available !== false).length}</strong></div>
+          <div><ArrowUpRight size={17} /><span>Pedidos novos</span><strong>{orders.filter((order) => order.status === "novo").length + legacyOrders.length}</strong></div>
+          <div><Check size={17} /><span>Entregues</span><strong>{deliveredOrderCount}</strong></div>
+        </div>
+
+        <div className="admin-tabs">
+          <button className={tab === "perfumes" ? "active" : ""} onClick={() => { setTab("perfumes"); setQuery(""); }}>
+            <Package size={15} /> Perfumes
+          </button>
+          <button className={tab === "pedidos" ? "active" : ""} onClick={() => { setTab("pedidos"); setQuery(""); }}>
+            <ArrowUpRight size={15} /> Pedidos <span>{orders.length + legacyOrders.length}</span>
+          </button>
+          <button className={tab === "remessas" ? "active" : ""} onClick={() => { setTab("remessas"); setQuery(""); }}>
+            <Archive size={15} /> Remessas <span>{remessas.length}</span>
+          </button>
+        </div>
+
+        {editing && <PerfumeEditor initial={editing} onCancel={() => setEditing(null)} onSave={savePerfume} saving={saving} />}
+
+        {!editing && tab === "perfumes" && (
+          <section className="admin-section">
+            <div className="admin-section-heading">
+              <div><span className="admin-form-kicker">Catálogo compartilhado</span><h2>Perfumes cadastrados</h2></div>
+              <button className="admin-primary-button" onClick={() => setEditing(emptyForm())}><Plus size={16} /> Novo perfume</button>
+            </div>
+            <label className="admin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome, marca ou gênero" /></label>
+            <div className="admin-perfume-list">
+              {visiblePerfumes.length === 0 ? (
+                <div className="admin-empty">Nenhum perfume encontrado. Use "Novo perfume" para criar a primeira ficha.</div>
+              ) : visiblePerfumes.map((raw) => {
+                const perfumeId = text(raw.id) || text(raw.name);
+                const totalOrders = orderTotals.get(perfumeId) || 0;
+                return (
+                  <article className="admin-perfume-row" key={perfumeId}>
+                    <div className="admin-perfume-image">{text(raw.imageUrl) ? <img src={text(raw.imageUrl)} alt="" /> : <img src={logoMark} alt="" />}</div>
+                    <div className="admin-perfume-info">
+                      <div className="admin-row-top">
+                        <div><h3>{text(raw.name) || "Sem nome"}</h3><p>{text(raw.brand)}{text(raw.type) ? ` · ${normalizeGender(raw.gender || raw.type || raw.family)}` : ""}</p></div>
+                        <span className={`admin-availability ${raw.available === false ? "offline" : "online"}`}>{raw.available === false ? "Oculto" : "Publicado"}</span>
+                      </div>
+                      <div className="admin-row-meta">
+                        <span>R$ {text(raw.pricePerMl) || "—"}/ml</span>
+                        <span>{totalOrders} pedido(s) no total</span>
+                        <span>{raw.available === false ? "Não aparece no catálogo" : "Visível no catálogo"}</span>
+                      </div>
+                      <div className="admin-row-actions">
+                        <button onClick={() => setEditing(formFromRaw(raw))}><Edit3 size={14} /> Editar</button>
+                        <button onClick={() => setMessagePerfume(raw)}><MessageCircle size={14} /> Mensagem</button>
+                        <button onClick={() => void toggleAvailability(raw)}>{raw.available === false ? <><Eye size={14} /> Publicar</> : <><EyeOff size={14} /> Ocultar</>}</button>
+                        <button className="danger" onClick={() => void removePerfume(perfumeId)}><Trash2 size={14} /> Remover</button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {!editing && tab === "pedidos" && (
+          <section className="admin-section">
+            <div className="admin-section-heading">
+              <div><span className="admin-form-kicker">Fila de atendimento</span><h2>Pedidos registrados</h2></div>
+              <div className="admin-header-actions">
+                {legacyOrders.length > 0 && <button className="admin-secondary-button" onClick={() => void migrateLegacyOrders()} disabled={migrating}><RefreshCw size={15} /> {migrating ? "Migrando…" : "Migrar legados"}</button>}
+                {removableOrderCount > 0 && <button className="admin-secondary-button admin-clear-button" onClick={requestClearRemovable}><Trash2 size={15} /> Limpar entregues e cancelados</button>}
+                <button className="admin-secondary-button" onClick={() => window.location.reload()}><RefreshCw size={15} /> Atualizar</button>
+              </div>
+            </div>
+            <div className="admin-order-toolbar">
+              <label className="admin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente ou perfume" /></label>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="todos">Todos os status</option>
+                {statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+              </select>
+            </div>
+            <div className="admin-orders-table">
+              <div className="admin-order-head"><span>Cliente</span><span>Fragrância</span><span>Volume</span><span>Status</span></div>
+              {visibleOrders.length === 0 ? (
+                <div className="admin-empty">Nenhum pedido encontrado.</div>
+              ) : visibleOrders.map((order) => (
+                <div className="admin-order-row" key={order.id}>
+                  <div><strong>{order.customerName}</strong><small>{order.contact || "Pedido legado"}</small></div>
+                  <div>
+                    <strong>{order.perfumeName}</strong>
+                    <small>{order.brand}{order.legacy ? " · legado" : ""}</small>
+                    <small className="order-payment">Pagamento: {paymentLabel(order.payment)}</small>
+                  </div>
+                  <span>{order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}{order.quantity > 1 ? ` · x${order.quantity}` : ""}</span>
+                  <select className={`status-select status-${order.status}`} value={order.status} disabled={Boolean(order.legacy)} onChange={(event) => void updateStatus(order, event.target.value as CustomerOrder["status"])}>
+                    {statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!editing && tab === "remessas" && (
+          <section className="admin-section">
+            <div className="admin-section-heading">
+              <div><span className="admin-form-kicker">Histórico de envios</span><h2>Remessas criadas</h2></div>
+              <button className="admin-primary-button" onClick={() => setRemessaCreatorOpen(true)}>
+                <Archive size={16} /> Nova remessa
+              </button>
+            </div>
+            <RemessasList remessas={remessas} />
+          </section>
+        )}
+
+        {clearDialogOpen && (
+          <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setClearDialogOpen(false)}>
+            <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-delivered-title">
+              <div className="admin-eyebrow"><span /> confirmação</div>
+              <h2 id="clear-delivered-title">Limpar pedidos concluídos?</h2>
+              <p>Você está prestes a remover <strong>{removableOrderCount} pedido(s)</strong> entregues ou cancelados. Pedidos novos, confirmados e separados serão preservados.</p>
+              <div className="admin-confirm-actions">
+                <button className="admin-secondary-button" onClick={() => setClearDialogOpen(false)}>Cancelar</button>
+                <button className="admin-primary-button admin-danger-button" onClick={() => void clearRemovableOrders()}><Trash2 size={15} /> Confirmar limpeza</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {messagePerfume && (
+          <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setMessagePerfume(null)}>
+            <div className="admin-confirm-dialog admin-message-dialog" role="dialog" aria-modal="true" aria-labelledby="whatsapp-message-title">
+              <div className="admin-editor-heading">
+                <div>
+                  <div className="admin-eyebrow"><span /> mensagem pronta</div>
+                  <h2 id="whatsapp-message-title">{text(messagePerfume.name) || "Perfume"}</h2>
+                </div>
+                <button className="admin-icon-button" onClick={() => setMessagePerfume(null)} aria-label="Fechar"><X size={18} /></button>
+              </div>
+              <textarea className="admin-message-textarea" readOnly value={whatsappMessage} onFocus={(event) => event.target.select()} />
+              <div className="admin-confirm-actions">
+                <button className="admin-secondary-button" onClick={() => setMessagePerfume(null)}>Fechar</button>
+                <a className="admin-secondary-button" href={`https://wa.me/?text=${encodeURIComponent(whatsappMessage)}`} target="_blank" rel="noreferrer"><MessageCircle size={15} /> Abrir no WhatsApp</a>
+                <button className="admin-primary-button" onClick={() => void copyWhatsappMessage()}><Copy size={15} /> Copiar mensagem</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {remessaCreatorOpen && (
+          <RemessaCreator
+            orders={allOrdersForRemessa}
+            onClose={() => setRemessaCreatorOpen(false)}
+            onCreated={(msg) => { setRemessaCreatorOpen(false); setNotice(msg); setTab("remessas"); }}
+          />
+        )}
+      </main>
+    </div>
+  );
 }

@@ -18,6 +18,7 @@ export const catalogRef = doc(firestore, "dados", "principal");
 export const ordersRef = collection(firestore, "pedidos");
 export const apcStatusRef = collection(firestore, "apcStatus");
 export const stockStatusRef = collection(firestore, "stockStatus");
+export const remessasRef = collection(firestore, "remessas");
 
 export type CatalogDocument = { perfumes: Record<string, unknown>[]; updatedAt?: string };
 export type CustomerOrder = {
@@ -39,6 +40,18 @@ export type CustomerOrder = {
 };
 export type ApcStatus = { perfumeId: string; reserved: boolean; orderId: string; volumeMl?: number; reservedAt: string };
 export type StockStatus = { perfumeId: string; reservedMl: number; lastOrderId?: string; updatedAt: string };
+export type Remessa = {
+  id?: string;
+  createdAt: string;
+  customerName: string;
+  orderIds: string[];
+  orderSummaries: Array<{
+    orderId: string;
+    perfumeName: string;
+    volumeMl: number;
+    isApc?: boolean;
+  }>;
+};
 
 export function subscribeCatalog(onData: (data: CatalogDocument, fromServer: boolean) => void, onError: (error: Error) => void): Unsubscribe {
   return onSnapshot(catalogRef, (snapshot) => {
@@ -65,13 +78,18 @@ export async function getAdminProfile(user: User) {
 }
 
 export function subscribeOrders(onData: (orders: CustomerOrder[], fromServer: boolean) => void, onError: (error: Error) => void): Unsubscribe {
-  // Older orders may not have createdAt, and an orderBy query can fail because
-  // of a missing index or mixed legacy data. The collection is already
-  // protected by Firestore rules, so sort after reading it.
   return onSnapshot(ordersRef, (snapshot) => {
     const orders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as CustomerOrder));
     orders.sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
     onData(orders, !snapshot.metadata.hasPendingWrites);
+  }, onError);
+}
+
+export function subscribeRemessas(onData: (remessas: Remessa[]) => void, onError: (error: Error) => void): Unsubscribe {
+  return onSnapshot(remessasRef, (snapshot) => {
+    const remessas = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Remessa));
+    remessas.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    onData(remessas);
   }, onError);
 }
 
@@ -150,6 +168,21 @@ export async function deleteCustomerOrders(orderIds: string[]) {
 
 export async function saveCatalog(perfumes: Record<string, unknown>[]) {
   await setDoc(catalogRef, { perfumes, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+export async function createRemessa(
+  orderIds: string[],
+  customerName: string,
+  orderSummaries: Remessa["orderSummaries"]
+): Promise<void> {
+  const remessaRef = doc(remessasRef);
+  const batch = writeBatch(firestore);
+  const now = new Date().toISOString();
+  batch.set(remessaRef, { createdAt: now, customerName, orderIds, orderSummaries });
+  orderIds.forEach((orderId) => {
+    batch.update(doc(firestore, "pedidos", orderId), { status: "entregue", updatedAt: now });
+  });
+  await batch.commit();
 }
 
 export async function syncApcStatus(entries: Array<Omit<ApcStatus, "reservedAt">>) {
