@@ -1,9 +1,9 @@
 // Atelier Noir — sala de controle SIAROM: fichas sóbrias, filetes finos e gestão direta da curadoria.
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 import { useCatalog } from "@/contexts/CatalogContext";
-import { createCustomerOrder, createRemessa, deleteCustomerOrders, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, subscribeRemessas, syncApcStatus, syncStockStatus, updateCustomerOrderStatus, type CustomerOrder, type Remessa } from "@/lib/firebase";
+import { cancelCustomerOrder, createCustomerOrder, createRemessa, deleteCustomerOrders, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, subscribeRemessas, syncApcStatus, syncStockStatus, updateRemessaStatus, type CustomerOrder, type Remessa, type RemessaStatus } from "@/lib/firebase";
 import { buildWhatsappMessage, logoMark, normalizeGender } from "@/lib/catalog";
 import type { User } from "firebase/auth";
 
@@ -16,9 +16,11 @@ type PerfumeForm = Record<string, unknown> & {
 };
 
 const volumes = [3, 7, 10, 15, 20, 30];
-const statuses: CustomerOrder["status"][] = ["novo", "confirmado", "separado", "entregue", "cancelado"];
 const genders = ["Compartilhável", "Masculino", "Feminino"];
 const defaultDeliveryText = "Os frascos são enviados com identificação da fragrância e do volume. Embalados em caixas com proteção para manter os frascos intactos, visando preservar a experiência completa da fragrância.";
+
+// Status possíveis de remessa (pedidos não têm mais select de status)
+const remessaStatuses: RemessaStatus[] = ["confirmado", "separado", "enviado", "cancelado"];
 
 const emptyForm = (): PerfumeForm => ({
   id: "", name: "", brand: "", type: "", pricePerMl: "", recavePrice: "8,00", totalMl: "", imageUrl: "", obs: "",
@@ -33,7 +35,9 @@ function money(value: number) { return value > 0 ? new Intl.NumberFormat("pt-BR"
 function parseVolumeList(value: string) {
   return Array.from(new Set(value.split(",").map((item) => Number.parseFloat(item.trim().replace(",", "."))).filter((item) => Number.isFinite(item) && item > 0))).sort((left, right) => left - right);
 }
-function statusLabel(value: string) { return ({ novo: "Novo", confirmado: "Confirmado", separado: "Separado", entregue: "Entregue", cancelado: "Cancelado" } as Record<string, string>)[value] || value; }
+function remessaStatusLabel(value: string) {
+  return ({ confirmado: "Confirmado", separado: "Separado", enviado: "Enviado", cancelado: "Cancelado" } as Record<string, string>)[value] || value;
+}
 function paymentLabel(value: string) { return ({ pix: "Pix", cartao_credito: "Cartão de crédito" } as Record<string, string>)[value] || (value ? value : "Pagamento a definir"); }
 function formatDate(iso: string) {
   if (!iso) return "—";
@@ -71,6 +75,7 @@ function authErrorMessage(error: unknown) {
   return messages[code] || `Não foi possível entrar${code ? ` (${code})` : ""}. Confira o cadastro no Firebase Authentication.`;
 }
 
+// ─── Login ────────────────────────────────────────────────────────────────────
 function AdminLogin({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -85,10 +90,12 @@ function AdminLogin({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   return <div className="admin-login"><div className="admin-login-card"><div className="admin-seal"><img src={logoMark} alt="" /></div><div className="admin-eyebrow"><span /> área reservada</div><h1>Arquivo<br /><em>SIAROM.</em></h1><p>Entre para administrar fragrâncias, disponibilidade e pedidos da curadoria.</p><form onSubmit={submit}><label><span>E-mail administrativo</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu@email.com" /></label><label><span>Senha criada no Firebase</span><input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" /></label>{error && <div className="admin-error">{error}</div>}<button className="admin-primary-button" disabled={busy}>{busy ? "Verificando…" : "Entrar no arquivo"}<ArrowUpRight size={16} /></button></form><Link href="/" className="admin-back-link"><ArrowLeft size={14} /> Voltar ao catálogo</Link></div></div>;
 }
 
+// ─── Header ───────────────────────────────────────────────────────────────────
 function AdminHeader({ user, onLogout }: { user: User; onLogout: () => void }) {
   return <header className="admin-header"><Link href="/" className="admin-brand"><img src={logoMark} alt="" /><span><strong>SIAROM</strong><small>Admin atelier</small></span></Link><div className="admin-user"><span><ShieldCheck size={14} /> {user.email}</span><button onClick={onLogout}><LogOut size={15} /> Sair</button></div></header>;
 }
 
+// ─── Editor de perfume ────────────────────────────────────────────────────────
 function PerfumeEditor({ initial, onCancel, onSave, saving }: { initial: PerfumeForm; onCancel: () => void; onSave: (data: PerfumeForm) => Promise<void>; saving: boolean }) {
   const [form, setForm] = useState(initial);
   const set = (key: keyof PerfumeForm, value: unknown) => setForm((current) => ({ ...current, [key]: value }));
@@ -100,29 +107,61 @@ function PerfumeEditor({ initial, onCancel, onSave, saving }: { initial: Perfume
 // ─── Criador de remessa ────────────────────────────────────────────────────────
 function RemessaCreator({
   orders,
+  remessas,
   onClose,
   onCreated,
 }: {
   orders: (CustomerOrder & { legacy?: boolean })[];
+  remessas: Remessa[];
   onClose: () => void;
   onCreated: (notice: string) => void;
 }) {
+  // Pedidos sem remessa e não cancelados
+  const remessaOrderIds = useMemo(() => new Set(remessas.flatMap((r) => r.orderIds)), [remessas]);
   const activeOrders = orders.filter(
-    (o) => !o.legacy && o.id && (o.status === "novo" || o.status === "confirmado" || o.status === "separado")
+    (o) => !o.legacy && o.id && o.status !== "cancelado" && !remessaOrderIds.has(o.id)
   );
+
+  // Agrupar por cliente para mostrar aviso se tentar misturar
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    const order = activeOrders.find((o) => o.id === id);
+    if (!order) return;
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        return next;
+      }
+      // Bloqueia se tentar misturar clientes
+      const selectedOrders = activeOrders.filter((o) => next.has(o.id!));
+      const existingCustomer = selectedOrders[0]?.customerName;
+      if (existingCustomer && existingCustomer !== order.customerName) {
+        setError(`Remessas são para um único cliente. Remova os pedidos de "${existingCustomer}" antes de adicionar "${order.customerName}".`);
+        return prev;
+      }
+      setError("");
+      next.add(id);
       return next;
     });
+  };
 
   const selectedOrders = activeOrders.filter((o) => selected.has(o.id!));
-  const customerNames = Array.from(new Set(selectedOrders.map((o) => o.customerName).filter(Boolean)));
+  const customerName = selectedOrders[0]?.customerName || "";
+
+  // Agrupar lista por cliente para facilitar visualização
+  const ordersByCustomer = useMemo(() => {
+    const map = new Map<string, typeof activeOrders>();
+    activeOrders.forEach((o) => {
+      const name = o.customerName || "Sem nome";
+      if (!map.has(name)) map.set(name, []);
+      map.get(name)!.push(o);
+    });
+    return map;
+  }, [activeOrders]);
 
   const confirm = async () => {
     if (!selected.size) return;
@@ -130,15 +169,14 @@ function RemessaCreator({
     setError("");
     try {
       const orderIds = Array.from(selected);
-      const customerName = customerNames.join(", ") || "Cliente";
-      const orderSummaries = selectedOrders.map((o) => ({
+      const summaries = selectedOrders.map((o) => ({
         orderId: o.id!,
         perfumeName: o.perfumeName,
         volumeMl: o.volumeMl,
         isApc: o.isApc,
       }));
-      await createRemessa(orderIds, customerName, orderSummaries);
-      onCreated(`Remessa criada com ${orderIds.length} pedido(s). Status atualizado para "Entregue".`);
+      await createRemessa(orderIds, customerName || "Cliente", summaries);
+      onCreated(`Remessa de ${customerName || "cliente"} criada com ${orderIds.length} pedido(s).`);
     } catch {
       setError("Não foi possível criar a remessa. Tente novamente.");
     } finally {
@@ -159,62 +197,68 @@ function RemessaCreator({
 
         {activeOrders.length === 0 ? (
           <p style={{ color: "var(--muted)", padding: "1rem 0" }}>
-            Nenhum pedido ativo (novo, confirmado ou separado) disponível para agrupar.
+            Nenhum pedido disponível para agrupar. Todos já estão em uma remessa ou foram cancelados.
           </p>
         ) : (
           <>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
-              Marque os pedidos que foram juntos na mesma caixa. Eles serão marcados como <strong>Entregue</strong> automaticamente.
+              Marque os pedidos desta caixa. Só é possível agrupar pedidos do <strong>mesmo cliente</strong>. O status de progresso será controlado na remessa.
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: 340, overflowY: "auto" }}>
-              {activeOrders.map((order) => (
-                <label
-                  key={order.id}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "0.75rem",
-                    padding: "0.6rem 0.75rem", borderRadius: 6, cursor: "pointer",
-                    background: selected.has(order.id!) ? "var(--surface-raised, #f5f5f0)" : "transparent",
-                    border: "1px solid",
-                    borderColor: selected.has(order.id!) ? "var(--accent, #222)" : "var(--border, #e0e0e0)",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.has(order.id!)}
-                    onChange={() => toggle(order.id!)}
-                    style={{ accentColor: "var(--accent, #222)", width: 16, height: 16, flexShrink: 0 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>{order.customerName || "Cliente"}</div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-                      {order.perfumeName} · {order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}
-                      {order.quantity > 1 ? ` · x${order.quantity}` : ""}
-                    </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", maxHeight: 360, overflowY: "auto" }}>
+              {Array.from(ordersByCustomer.entries()).map(([clienteName, clienteOrders]) => (
+                <div key={clienteName}>
+                  <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.4rem", padding: "0 0.25rem" }}>
+                    {clienteName}
                   </div>
-                  <span
-                    style={{
-                      fontSize: "0.75rem", padding: "2px 8px", borderRadius: 99,
-                      background: "var(--surface-raised, #f0f0eb)", color: "var(--muted)",
-                    }}
-                  >
-                    {statusLabel(order.status)}
-                  </span>
-                </label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {clienteOrders.map((order) => (
+                      <label
+                        key={order.id}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "0.75rem",
+                          padding: "0.6rem 0.75rem", borderRadius: 6, cursor: "pointer",
+                          background: selected.has(order.id!) ? "var(--surface-raised, #f5f5f0)" : "transparent",
+                          border: "1px solid",
+                          borderColor: selected.has(order.id!) ? "var(--accent, #222)" : "var(--border, #e0e0e0)",
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.has(order.id!)}
+                          onChange={() => toggle(order.id!)}
+                          style={{ accentColor: "var(--accent, #222)", width: 16, height: 16, flexShrink: 0 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>{order.perfumeName}</div>
+                          <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                            {order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}
+                            {order.quantity > 1 ? ` · x${order.quantity}` : ""}
+                            {order.payment ? ` · ${paymentLabel(order.payment)}` : ""}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
 
             {selected.size > 0 && (
               <div style={{ marginTop: "0.75rem", fontSize: "0.82rem", color: "var(--muted)" }}>
                 <strong>{selected.size}</strong> pedido(s) selecionado(s)
-                {customerNames.length > 0 && <> · cliente: <strong>{customerNames.join(", ")}</strong></>}
+                {customerName && <> · <strong>{customerName}</strong></>}
               </div>
             )}
           </>
         )}
 
-        {error && <div className="admin-error" style={{ marginTop: "0.75rem" }}>{error}</div>}
+        {error && (
+          <div className="admin-error" style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+            <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {error}
+          </div>
+        )}
 
         <div className="admin-confirm-actions" style={{ marginTop: "1.25rem" }}>
           <button className="admin-secondary-button" onClick={onClose}>Cancelar</button>
@@ -231,8 +275,15 @@ function RemessaCreator({
   );
 }
 
-// ─── Lista de remessas ────────────────────────────────────────────────────────
-function RemessasList({ remessas }: { remessas: Remessa[] }) {
+// ─── Lista de remessas com select de status ───────────────────────────────────
+function RemessasList({ remessas, onStatusChange }: { remessas: Remessa[]; onStatusChange: (id: string, status: RemessaStatus) => Promise<void> }) {
+  const statusColors: Record<RemessaStatus, string> = {
+    confirmado: "#2563eb",
+    separado: "#d97706",
+    enviado: "#7c3aed",
+    cancelado: "#dc2626",
+  };
+
   if (remessas.length === 0) {
     return (
       <div className="admin-empty">
@@ -242,44 +293,56 @@ function RemessasList({ remessas }: { remessas: Remessa[] }) {
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-      {remessas.map((remessa) => (
-        <article
-          key={remessa.id}
-          style={{
-            border: "1px solid var(--border, #e0e0e0)", borderRadius: 8,
-            padding: "0.85rem 1rem", background: "var(--surface, #fff)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", marginBottom: "0.5rem" }}>
-            <div>
-              <strong style={{ fontSize: "0.92rem" }}>{remessa.customerName}</strong>
-              <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 2 }}>
-                {formatDate(remessa.createdAt)} · {remessa.orderIds.length} pedido(s)
+      {remessas.map((remessa) => {
+        const status = (remessa.status || "confirmado") as RemessaStatus;
+        return (
+          <article
+            key={remessa.id}
+            style={{
+              border: "1px solid var(--border, #e0e0e0)", borderRadius: 8,
+              padding: "0.85rem 1rem", background: "var(--surface, #fff)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem", marginBottom: "0.5rem" }}>
+              <div>
+                <strong style={{ fontSize: "0.92rem" }}>{remessa.customerName}</strong>
+                <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 2 }}>
+                  {formatDate(remessa.createdAt)} · {remessa.orderIds.length} pedido(s)
+                </div>
               </div>
+              {/* Select de status da remessa */}
+              <select
+                value={status}
+                onChange={(e) => void onStatusChange(remessa.id!, e.target.value as RemessaStatus)}
+                style={{
+                  fontSize: "0.78rem", padding: "3px 8px", borderRadius: 99,
+                  border: "1px solid",
+                  borderColor: statusColors[status] || "var(--border, #e0e0e0)",
+                  color: statusColors[status] || "var(--muted)",
+                  background: "var(--surface, #fff)",
+                  fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >
+                {remessaStatuses.map((s) => (
+                  <option key={s} value={s}>{remessaStatusLabel(s)}</option>
+                ))}
+              </select>
             </div>
-            <span
-              style={{
-                fontSize: "0.75rem", padding: "3px 10px", borderRadius: 99,
-                background: "var(--surface-raised, #f0f0eb)", color: "var(--muted)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Entregue
-            </span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            {remessa.orderSummaries.map((summary) => (
-              <div key={summary.orderId} style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
-                · {summary.perfumeName} — {summary.isApc ? `APC + ${summary.volumeMl} ml` : `${summary.volumeMl} ml`}
-              </div>
-            ))}
-          </div>
-        </article>
-      ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              {remessa.orderSummaries.map((summary) => (
+                <div key={summary.orderId} style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
+                  · {summary.perfumeName} — {summary.isApc ? `APC + ${summary.volumeMl} ml` : `${summary.volumeMl} ml`}
+                </div>
+              ))}
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
 
+// ─── Página principal ─────────────────────────────────────────────────────────
 export default function AdminPage() {
   const { rawPerfumes, saveRawPerfumes, isLive, syncError } = useCatalog();
   const [user, setUser] = useState<User | null>(null);
@@ -292,7 +355,6 @@ export default function AdminPage() {
   const [remessas, setRemessas] = useState<Remessa[]>([]);
   const [tab, setTab] = useState<"perfumes" | "pedidos" | "remessas">("perfumes");
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("todos");
   const [editing, setEditing] = useState<PerfumeForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -340,7 +402,7 @@ export default function AdminPage() {
     const perfumeName = text(raw.name); const brand = text(raw.brand); const perfumeId = text(raw.id) || perfumeName;
     return (Array.isArray(raw.orders) ? raw.orders : []).map((order) => {
       const item = order as Record<string, unknown>;
-      return { id: `legacy-${perfumeId}-${text(item.id)}`, perfumeId, perfumeName, brand, volumeMl: Number(item.ml) || 0, quantity: 1, unitPrice: 0, customerName: text(item.name), contact: "", payment: text(item.pagamento), status: item.entregue ? "entregue" as const : "novo" as const, createdAt: "", source: "catalogo" as const, isApc: Boolean(item.isApc), legacy: true };
+      return { id: `legacy-${perfumeId}-${text(item.id)}`, perfumeId, perfumeName, brand, volumeMl: Number(item.ml) || 0, quantity: 1, unitPrice: 0, customerName: text(item.name), contact: "", payment: text(item.pagamento), status: "novo" as const, createdAt: "", source: "catalogo" as const, isApc: Boolean(item.isApc), legacy: true };
     });
   }), [rawPerfumes]);
 
@@ -378,15 +440,19 @@ export default function AdminPage() {
     return totals;
   }, [orders, legacyOrders]);
 
+  // Mapa de remessaId → remessa para lookup nos pedidos
+  const remessaById = useMemo(() => new Map(remessas.map((r) => [r.id!, r])), [remessas]);
+  // Set de orderIds que já estão em alguma remessa
+  const remessaOrderIds = useMemo(() => new Set(remessas.flatMap((r) => r.orderIds)), [remessas]);
+
   const visiblePerfumes = useMemo(() => rawPerfumes.filter((raw) => {
     const q = query.toLowerCase();
     return !q || `${text(raw.name)} ${text(raw.brand)} ${normalizeGender(raw.gender || raw.type || raw.family)}`.toLowerCase().includes(q);
   }), [rawPerfumes, query]);
 
   const visibleOrders = useMemo(() => [...orders.map((order) => ({ ...order, legacy: false })), ...legacyOrders].filter((order) => {
-    const matchesSearch = !query || `${order.customerName} ${order.perfumeName} ${order.contact}`.toLowerCase().includes(query.toLowerCase());
-    return matchesSearch && (statusFilter === "todos" || order.status === statusFilter);
-  }), [orders, legacyOrders, query, statusFilter]);
+    return !query || `${order.customerName} ${order.perfumeName} ${order.contact}`.toLowerCase().includes(query.toLowerCase());
+  }), [orders, legacyOrders, query]);
 
   const savePerfume = async (data: PerfumeForm) => {
     setSaving(true);
@@ -413,10 +479,16 @@ export default function AdminPage() {
     catch { setNotice("Não foi possível atualizar a disponibilidade."); }
   };
 
-  const updateStatus = async (order: CustomerOrder & { legacy?: boolean }, status: CustomerOrder["status"]) => {
+  const handleCancelOrder = async (order: CustomerOrder & { legacy?: boolean }) => {
     if (order.legacy || !order.id) return;
-    try { await updateCustomerOrderStatus(order.id, status); }
-    catch (error) { setOrdersError(error instanceof Error && error.message.includes("apc-limit-reached") ? "Não há saldo APC para reativar este pedido." : "Não foi possível atualizar o status do pedido."); }
+    if (!window.confirm(`Cancelar o pedido de ${order.customerName} — ${order.perfumeName}?`)) return;
+    try { await cancelCustomerOrder(order.id); setNotice("Pedido cancelado."); }
+    catch { setOrdersError("Não foi possível cancelar o pedido."); }
+  };
+
+  const handleRemessaStatus = async (remessaId: string, status: RemessaStatus) => {
+    try { await updateRemessaStatus(remessaId, status); }
+    catch { setOrdersError("Não foi possível atualizar o status da remessa."); }
   };
 
   const recalibrateAvailability = async () => {
@@ -436,7 +508,7 @@ export default function AdminPage() {
       setNotice(`Disponibilidade recalibrada com ${allOrders.filter((order) => order.status !== "cancelado").length} pedido(s) ativo(s).`);
     } catch (error) {
       console.error("Erro ao recalibrar disponibilidade:", error);
-      setOrdersError("A recalibração não foi salva. Confirme que este usuário possui admins/{UID} com role admin e que você está na versão atual do painel.");
+      setOrdersError("A recalibração não foi salva.");
     } finally { setRecalibrating(false); }
   };
 
@@ -446,39 +518,30 @@ export default function AdminPage() {
     try {
       const existingRefs = new Set(orders.map((order) => order.legacyRef).filter(Boolean));
       const pending = legacyOrders.filter((order) => !existingRefs.has(order.id));
-      await Promise.all(pending.map((order) => createCustomerOrder({ perfumeId: order.perfumeId, perfumeName: order.perfumeName, brand: order.brand, volumeMl: order.volumeMl, quantity: 1, unitPrice: 0, customerName: order.customerName, contact: "", payment: order.payment || "pix", status: order.status, createdAt: new Date().toISOString(), source: "catalogo", legacyRef: order.id, isApc: order.isApc })));
+      await Promise.all(pending.map((order) => createCustomerOrder({ perfumeId: order.perfumeId, perfumeName: order.perfumeName, brand: order.brand, volumeMl: order.volumeMl, quantity: 1, unitPrice: 0, customerName: order.customerName, contact: "", payment: order.payment || "pix", status: "novo", createdAt: new Date().toISOString(), source: "catalogo", legacyRef: order.id, isApc: order.isApc })));
       const cleaned = rawPerfumes.map((raw) => { const next = { ...raw }; delete next.orders; return next; });
       await saveRawPerfumes(cleaned); setNotice(`${pending.length} pedido(s) legado(s) migrado(s) para a coleção privada.`);
     } catch { setNotice("A migração não foi concluída. Nenhum pedido legado deve ser removido manualmente."); }
     finally { setMigrating(false); }
   };
 
-  const deliveredOrderCount = orders.filter((order) => order.status === "entregue").length + legacyOrders.filter((order) => order.status === "entregue").length;
-  const removableOrderCount = orders.filter((order) => order.status === "entregue" || order.status === "cancelado").length + legacyOrders.filter((order) => order.status === "entregue" || order.status === "cancelado").length;
+  const removableOrderCount = orders.filter((o) => o.status === "cancelado").length;
   const requestClearRemovable = () => { if (removableOrderCount > 0) setClearDialogOpen(true); };
   const clearRemovableOrders = async () => {
     if (!removableOrderCount) return;
     try {
-      const removableStatuses = new Set(["entregue", "cancelado"]);
-      const remoteIds = orders.filter((order) => removableStatuses.has(order.status) && order.id).map((order) => order.id as string);
-      const legacyIds = new Set(legacyOrders.filter((order) => removableStatuses.has(order.status)).map((order) => order.id));
+      const remoteIds = orders.filter((o) => o.status === "cancelado" && o.id).map((o) => o.id as string);
       await deleteCustomerOrders(remoteIds);
-      if (legacyIds.size) {
-        const cleaned = rawPerfumes.map((raw) => {
-          const perfumeId = text(raw.id) || text(raw.name); const next = { ...raw };
-          if (Array.isArray(raw.orders)) next.orders = raw.orders.filter((order) => !legacyIds.has(`legacy-${perfumeId}-${text((order as Record<string, unknown>).id)}`));
-          return next;
-        });
-        await saveRawPerfumes(cleaned);
-      }
-      setClearDialogOpen(false); setNotice(`${remoteIds.length + legacyIds.size} pedido(s) entregue(s) ou cancelado(s) removido(s).`);
-    } catch { setClearDialogOpen(false); setOrdersError("Não foi possível limpar os pedidos entregues ou cancelados. Nenhum pedido ativo foi alterado."); }
+      setClearDialogOpen(false); setNotice(`${remoteIds.length} pedido(s) cancelado(s) removido(s).`);
+    } catch { setClearDialogOpen(false); setOrdersError("Não foi possível limpar os pedidos cancelados."); }
   };
 
   const allOrdersForRemessa = useMemo(
     () => [...orders.map((o) => ({ ...o, legacy: false })), ...legacyOrders],
     [orders, legacyOrders]
   );
+
+  const activeOrdersCount = orders.filter((o) => o.status !== "cancelado").length;
 
   if (!authReady) return <div className="admin-boot"><span className="loading-orbit" /> Verificando acesso…</div>;
   if (!user) return <AdminLogin onSignedIn={setUser} />;
@@ -511,8 +574,8 @@ export default function AdminPage() {
         <div className="admin-stats">
           <div><Package size={17} /><span>Perfumes</span><strong>{rawPerfumes.length}</strong></div>
           <div><Eye size={17} /><span>Publicados</span><strong>{rawPerfumes.filter((raw) => raw.available !== false).length}</strong></div>
-          <div><ArrowUpRight size={17} /><span>Pedidos novos</span><strong>{orders.filter((order) => order.status === "novo").length + legacyOrders.length}</strong></div>
-          <div><Check size={17} /><span>Entregues</span><strong>{deliveredOrderCount}</strong></div>
+          <div><ArrowUpRight size={17} /><span>Pedidos ativos</span><strong>{activeOrdersCount + legacyOrders.length}</strong></div>
+          <div><Archive size={17} /><span>Remessas</span><strong>{remessas.length}</strong></div>
         </div>
 
         <div className="admin-tabs">
@@ -575,35 +638,58 @@ export default function AdminPage() {
               <div><span className="admin-form-kicker">Fila de atendimento</span><h2>Pedidos registrados</h2></div>
               <div className="admin-header-actions">
                 {legacyOrders.length > 0 && <button className="admin-secondary-button" onClick={() => void migrateLegacyOrders()} disabled={migrating}><RefreshCw size={15} /> {migrating ? "Migrando…" : "Migrar legados"}</button>}
-                {removableOrderCount > 0 && <button className="admin-secondary-button admin-clear-button" onClick={requestClearRemovable}><Trash2 size={15} /> Limpar entregues e cancelados</button>}
+                {removableOrderCount > 0 && <button className="admin-secondary-button admin-clear-button" onClick={requestClearRemovable}><Trash2 size={15} /> Limpar cancelados</button>}
                 <button className="admin-secondary-button" onClick={() => window.location.reload()}><RefreshCw size={15} /> Atualizar</button>
               </div>
             </div>
-            <div className="admin-order-toolbar">
-              <label className="admin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente ou perfume" /></label>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="todos">Todos os status</option>
-                {statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
-              </select>
-            </div>
+            <label className="admin-search" style={{ marginBottom: "1rem" }}><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente ou perfume" /></label>
             <div className="admin-orders-table">
-              <div className="admin-order-head"><span>Cliente</span><span>Fragrância</span><span>Volume</span><span>Status</span></div>
+              <div className="admin-order-head"><span>Cliente</span><span>Fragrância</span><span>Volume</span><span>Remessa</span></div>
               {visibleOrders.length === 0 ? (
                 <div className="admin-empty">Nenhum pedido encontrado.</div>
-              ) : visibleOrders.map((order) => (
-                <div className="admin-order-row" key={order.id}>
-                  <div><strong>{order.customerName}</strong><small>{order.contact || "Pedido legado"}</small></div>
-                  <div>
-                    <strong>{order.perfumeName}</strong>
-                    <small>{order.brand}{order.legacy ? " · legado" : ""}</small>
-                    <small className="order-payment">Pagamento: {paymentLabel(order.payment)}</small>
+              ) : visibleOrders.map((order) => {
+                const emRemessa = order.id ? remessaOrderIds.has(order.id) : false;
+                const remessa = order.remessaId ? remessaById.get(order.remessaId) : undefined;
+                const isCanceled = order.status === "cancelado";
+                return (
+                  <div className="admin-order-row" key={order.id} style={{ opacity: isCanceled ? 0.55 : 1 }}>
+                    <div>
+                      <strong>{order.customerName}</strong>
+                      <small>{order.contact || (order.legacy ? "Pedido legado" : "")}</small>
+                    </div>
+                    <div>
+                      <strong>{order.perfumeName}</strong>
+                      <small>{order.brand}{order.legacy ? " · legado" : ""}</small>
+                      <small className="order-payment">Pagamento: {paymentLabel(order.payment)}</small>
+                    </div>
+                    <span>{order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}{order.quantity > 1 ? ` · x${order.quantity}` : ""}</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      {isCanceled ? (
+                        <span style={{ fontSize: "0.78rem", padding: "2px 8px", borderRadius: 99, background: "#fee2e2", color: "#dc2626", fontWeight: 600, width: "fit-content" }}>
+                          Cancelado
+                        </span>
+                      ) : emRemessa && remessa ? (
+                        <span style={{ fontSize: "0.78rem", padding: "2px 8px", borderRadius: 99, background: "var(--surface-raised, #f0f0eb)", color: "var(--muted)", fontWeight: 500, width: "fit-content" }}>
+                          <Archive size={11} style={{ display: "inline", marginRight: 3, verticalAlign: "middle" }} />
+                          {remessa.customerName} · {remessaStatusLabel(remessa.status || "confirmado")}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "0.78rem", padding: "2px 8px", borderRadius: 99, background: "#fef9c3", color: "#854d0e", fontWeight: 500, width: "fit-content", display: "flex", alignItems: "center", gap: 4 }}>
+                          <AlertCircle size={11} /> Sem remessa
+                        </span>
+                      )}
+                      {!isCanceled && !order.legacy && (
+                        <button
+                          onClick={() => void handleCancelOrder(order)}
+                          style={{ fontSize: "0.75rem", color: "#dc2626", background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0, width: "fit-content" }}
+                        >
+                          Cancelar pedido
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <span>{order.isApc ? `APC + ${order.volumeMl} ml` : `${order.volumeMl} ml`}{order.quantity > 1 ? ` · x${order.quantity}` : ""}</span>
-                  <select className={`status-select status-${order.status}`} value={order.status} disabled={Boolean(order.legacy)} onChange={(event) => void updateStatus(order, event.target.value as CustomerOrder["status"])}>
-                    {statuses.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
-                  </select>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -616,7 +702,7 @@ export default function AdminPage() {
                 <Archive size={16} /> Nova remessa
               </button>
             </div>
-            <RemessasList remessas={remessas} />
+            <RemessasList remessas={remessas} onStatusChange={handleRemessaStatus} />
           </section>
         )}
 
@@ -624,8 +710,8 @@ export default function AdminPage() {
           <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setClearDialogOpen(false)}>
             <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-delivered-title">
               <div className="admin-eyebrow"><span /> confirmação</div>
-              <h2 id="clear-delivered-title">Limpar pedidos concluídos?</h2>
-              <p>Você está prestes a remover <strong>{removableOrderCount} pedido(s)</strong> entregues ou cancelados. Pedidos novos, confirmados e separados serão preservados.</p>
+              <h2 id="clear-delivered-title">Limpar pedidos cancelados?</h2>
+              <p>Você está prestes a remover <strong>{removableOrderCount} pedido(s)</strong> cancelados. Pedidos ativos serão preservados.</p>
               <div className="admin-confirm-actions">
                 <button className="admin-secondary-button" onClick={() => setClearDialogOpen(false)}>Cancelar</button>
                 <button className="admin-primary-button admin-danger-button" onClick={() => void clearRemovableOrders()}><Trash2 size={15} /> Confirmar limpeza</button>
@@ -657,6 +743,7 @@ export default function AdminPage() {
         {remessaCreatorOpen && (
           <RemessaCreator
             orders={allOrdersForRemessa}
+            remessas={remessas}
             onClose={() => setRemessaCreatorOpen(false)}
             onCreated={(msg) => { setRemessaCreatorOpen(false); setNotice(msg); setTab("remessas"); }}
           />
