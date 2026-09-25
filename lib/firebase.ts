@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { collection, doc, getDoc, getDocs, getFirestore, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
 
 export const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCzrmQ5YK3aaxek0xVclp9vxYSEX7NlUag",
@@ -202,6 +202,22 @@ export async function createRemessa(
 // Atualiza o status de uma remessa
 export async function updateRemessaStatus(remessaId: string, status: RemessaStatus): Promise<void> {
   await updateDoc(doc(firestore, "remessas", remessaId), { status, updatedAt: new Date().toISOString() });
+}
+
+// Deleta uma remessa e desvincula os pedidos associados
+export async function deleteRemessa(remessaId: string): Promise<void> {
+  const remessaRef = doc(firestore, "remessas", remessaId);
+  const remessaSnapshot = await getDoc(remessaRef);
+  if (!remessaSnapshot.exists()) return;
+  const remessa = remessaSnapshot.data() as Remessa;
+  const batch = writeBatch(firestore);
+  const now = new Date().toISOString();
+  // Desvincula cada pedido (remove remessaId)
+  (remessa.orderIds || []).forEach((orderId) => {
+    batch.update(doc(firestore, "pedidos", orderId), { remessaId: null, updatedAt: now });
+  });
+  batch.delete(remessaRef);
+  await batch.commit();
 }
 
 export async function syncApcStatus(entries: Array<Omit<ApcStatus, "reservedAt">>) {

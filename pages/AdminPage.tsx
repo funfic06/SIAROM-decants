@@ -1,9 +1,9 @@
 // Atelier Noir — sala de controle SIAROM: fichas sóbrias, filetes finos e gestão direta da curadoria.
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive, AlertCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive, AlertCircle, UserPlus } from "lucide-react";
 import { Link } from "wouter";
 import { useCatalog } from "@/contexts/CatalogContext";
-import { cancelCustomerOrder, createCustomerOrder, createRemessa, deleteCustomerOrders, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, subscribeRemessas, syncApcStatus, syncStockStatus, updateRemessaStatus, type CustomerOrder, type Remessa, type RemessaStatus } from "@/lib/firebase";
+import { cancelCustomerOrder, createCustomerOrder, createRemessa, deleteCustomerOrders, deleteRemessa, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, subscribeRemessas, syncApcStatus, syncStockStatus, updateRemessaStatus, type CustomerOrder, type Remessa, type RemessaStatus } from "@/lib/firebase";
 import { buildWhatsappMessage, logoMark, normalizeGender } from "@/lib/catalog";
 import type { User } from "firebase/auth";
 
@@ -102,6 +102,146 @@ function PerfumeEditor({ initial, onCancel, onSave, saving }: { initial: Perfume
   const setPrice = (ml: number, value: string) => setForm((current) => ({ ...current, prices: { ...current.prices, [ml]: value || null } }));
   const setAccord = (index: number, value: string) => setForm((current) => ({ ...current, accords: current.accords.map((accord, accordIndex) => accordIndex === index ? value : accord) }));
   return <section className="admin-editor"><div className="admin-editor-heading"><div><div className="admin-eyebrow"><span /> {form.id ? "editar ficha" : "nova ficha"}</div><h2>{form.id ? form.name || "Editar perfume" : "Adicionar perfume"}</h2></div><button className="admin-icon-button" onClick={onCancel} aria-label="Fechar editor"><X size={18} /></button></div><div className="admin-form-grid"><label><span>Nome do perfume *</span><input value={form.name} onChange={(event) => set("name", event.target.value)} placeholder="Ex.: Oud Satin Mood" /></label><label><span>Marca *</span><input value={form.brand} onChange={(event) => set("brand", event.target.value)} placeholder="Ex.: Maison Francis Kurkdjian" /></label><label><span>Gênero *</span><select value={form.type} required onChange={(event) => set("type", event.target.value)}><option value="" disabled>Selecione o gênero</option>{genders.map((gender) => <option key={gender} value={gender}>{gender}</option>)}</select></label><label><span>Preço por ml (R$)</span><input value={form.pricePerMl} onChange={(event) => set("pricePerMl", event.target.value)} placeholder="Ex.: 5,50" /></label><label><span>Taxa de recave (R$)</span><input value={form.recavePrice} onChange={(event) => set("recavePrice", event.target.value)} placeholder="8,00" /></label><label><span>Total disponível (ml)</span><input type="number" min="0" value={form.totalMl} onChange={(event) => set("totalMl", event.target.value)} placeholder="Ex.: 100" /></label><label className="admin-form-wide"><span>Volumes disponíveis (ml)</span><input value={form.customVolumes} onChange={(event) => set("customVolumes", event.target.value)} placeholder="Ex.: 3, 7, 10, 25" /><small>Opcional. Separe os volumes por vírgula. Se deixar vazio, serão usados 3, 7, 10, 15, 20 e 30 ml.</small></label><label className="admin-form-wide"><span>URL da imagem</span><input type="url" value={form.imageUrl} onChange={(event) => set("imageUrl", event.target.value)} placeholder="https://…" /></label><label className="admin-form-wide"><span>Observação</span><textarea value={form.obs} onChange={(event) => set("obs", event.target.value)} placeholder="Lote, conservação ou observação para a equipe." /></label></div><div className="admin-form-section admin-copy-section"><div><span className="admin-form-kicker">Texto da ficha</span><p>Personalize o resumo e a descrição que aparecerão na página do perfume.</p></div><label className="admin-form-wide"><span>Resumo curto</span><input value={form.shortDescription} onChange={(event) => set("shortDescription", event.target.value)} placeholder="Ex.: Um floral luminoso e confortável." /></label><label className="admin-form-wide"><span>Descrição principal</span><textarea value={form.description} onChange={(event) => set("description", event.target.value)} placeholder="Texto completo da fragrância para a página individual." /></label><label className="admin-form-wide"><span>Entrega e conservação</span><textarea value={form.deliveryText} onChange={(event) => set("deliveryText", event.target.value)} /></label><label className="admin-form-wide"><span>Link de referência (opcional)</span><input type="url" value={form.referenceUrl} onChange={(event) => set("referenceUrl", event.target.value)} placeholder="Ex.: https://www.fragrantica.com.br/perfume/…" /></label></div><div className="admin-form-section admin-accord-section"><div><span className="admin-form-kicker">Cinco principais acordes</span><p>Preencha até cinco acordes para exibir na página pública.</p></div><div className="admin-accord-grid">{form.accords.map((accord, index) => <label key={index}><span>Acorde {index + 1}</span><input value={accord} onChange={(event) => setAccord(index, event.target.value)} placeholder={`Ex.: ${["Amadeirado", "Âmbar", "Floral", "Cítrico", "Almiscarado"][index]}`} /></label>)}</div></div><div className="admin-form-section"><div><span className="admin-form-kicker">Valores por volume</span><p>Deixe vazio para calcular pelo preço por ml.</p></div><div className="admin-price-grid">{(parseVolumeList(form.customVolumes).length ? parseVolumeList(form.customVolumes) : volumes).map((ml) => <label key={ml}><span>{ml} ml</span><input value={form.prices[ml] || ""} onChange={(event) => setPrice(ml, event.target.value)} placeholder={form.pricePerMl ? money(Number.parseFloat(form.pricePerMl.replace(",", ".")) * ml) : "—"} /></label>)}</div></div><div className="admin-form-section apc-editor-section"><div><span className="admin-form-kicker">Opção APC</span><p>Inclui o frasco e o volume configurado. O limite padrão é de uma unidade por frasco.</p></div><label className="admin-switch apc-toggle"><input type="checkbox" checked={form.hasApc} onChange={(event) => set("hasApc", event.target.checked)} /><span><strong>Oferecer APC + {form.apcMl || 40} ml</strong><small>O cliente verá esta opção junto aos volumes do perfume.</small></span></label>{form.hasApc && <div className="admin-apc-fields"><label><span>Volume APC (ml)</span><input type="number" min="1" value={form.apcMl} onChange={(event) => set("apcMl", Number(event.target.value) || 40)} /></label><label><span>Valor do frasco (R$)</span><input value={form.apcFrasco} onChange={(event) => set("apcFrasco", event.target.value)} placeholder="10,00" /></label><label><span>Limite por frasco</span><input type="number" min="1" value={form.apcLimit} onChange={(event) => set("apcLimit", event.target.value || "1")} /></label></div>}</div><label className="admin-switch"><input type="checkbox" checked={form.available} onChange={(event) => set("available", event.target.checked)} /><span><strong>Publicar no catálogo</strong><small>Quando desativado, o perfume fica invisível para clientes, mas permanece salvo.</small></span></label><div className="admin-editor-actions"><button className="admin-secondary-button" onClick={onCancel}>Cancelar</button><button className="admin-primary-button" disabled={saving || !form.name.trim() || !form.brand.trim() || !form.type} onClick={() => onSave(form)}>{saving ? "Salvando…" : "Salvar ficha"}<Check size={16} /></button></div></section>;
+}
+
+// ─── Criador de pedido (registro manual pelo admin) ───────────────────────────
+function OrderCreator({
+  perfumes,
+  onClose,
+  onCreated,
+}: {
+  perfumes: Record<string, unknown>[];
+  onClose: () => void;
+  onCreated: (notice: string) => void;
+}) {
+  const [perfumeId, setPerfumeId] = useState("");
+  const [volumeMl, setVolumeMl] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [contact, setContact] = useState("");
+  const [payment, setPayment] = useState("pix");
+  const [quantity, setQuantity] = useState("1");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectedPerfume = perfumes.find((p) => text(p.id) === perfumeId);
+  const availableVolumes = useMemo(() => {
+    if (!selectedPerfume) return volumes;
+    const custom = Array.isArray(selectedPerfume.customVolumes) ? selectedPerfume.customVolumes.map(Number).filter(Boolean) : [];
+    return custom.length ? custom : volumes;
+  }, [selectedPerfume]);
+
+  const confirm = async () => {
+    if (!perfumeId || !volumeMl || !customerName.trim()) {
+      setError("Preencha perfume, volume e nome do cliente.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const perfume = perfumes.find((p) => text(p.id) === perfumeId);
+      if (!perfume) throw new Error("Perfume não encontrado");
+      const volNum = Number(volumeMl);
+      const pricePerMl = Number(String(perfume.pricePerMl || "0").replace(",", "."));
+      const unitPrice = pricePerMl * volNum;
+      await createCustomerOrder({
+        perfumeId,
+        perfumeName: text(perfume.name),
+        brand: text(perfume.brand),
+        volumeMl: volNum,
+        quantity: Number(quantity) || 1,
+        unitPrice,
+        customerName: customerName.trim(),
+        contact: contact.trim(),
+        payment,
+        status: "novo",
+        createdAt: new Date().toISOString(),
+        source: "catalogo",
+        isApc: false,
+      });
+      onCreated(`Pedido de ${customerName.trim()} registrado com sucesso.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      setError(msg === "apc-limit-reached" ? "Limite APC atingido para este perfume." : "Não foi possível registrar o pedido. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="admin-confirm-dialog" style={{ maxWidth: 520, width: "100%" }} role="dialog" aria-modal="true" aria-labelledby="order-creator-title">
+        <div className="admin-editor-heading">
+          <div>
+            <div className="admin-eyebrow"><span /> novo pedido</div>
+            <h2 id="order-creator-title">Registrar pedido manualmente</h2>
+          </div>
+          <button className="admin-icon-button" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
+        </div>
+
+        <div className="admin-form-grid" style={{ gap: "0.75rem" }}>
+          <label style={{ gridColumn: "1 / -1" }}>
+            <span>Perfume *</span>
+            <select value={perfumeId} onChange={(e) => { setPerfumeId(e.target.value); setVolumeMl(""); }}>
+              <option value="" disabled>Selecione o perfume</option>
+              {perfumes.filter((p) => p.available !== false).map((p) => (
+                <option key={text(p.id)} value={text(p.id)}>{text(p.name)} — {text(p.brand)}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Volume (ml) *</span>
+            <select value={volumeMl} onChange={(e) => setVolumeMl(e.target.value)} disabled={!perfumeId}>
+              <option value="" disabled>Selecione o volume</option>
+              {availableVolumes.map((v) => (
+                <option key={v} value={v}>{v} ml</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Quantidade</span>
+            <input type="number" min="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          </label>
+
+          <label style={{ gridColumn: "1 / -1" }}>
+            <span>Nome do cliente *</span>
+            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Ex.: Maria Silva" />
+          </label>
+
+          <label style={{ gridColumn: "1 / -1" }}>
+            <span>Contato (WhatsApp ou e-mail)</span>
+            <input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Ex.: 71999990000" />
+          </label>
+
+          <label style={{ gridColumn: "1 / -1" }}>
+            <span>Forma de pagamento</span>
+            <select value={payment} onChange={(e) => setPayment(e.target.value)}>
+              <option value="pix">Pix</option>
+              <option value="cartao_credito">Cartão de crédito</option>
+            </select>
+          </label>
+        </div>
+
+        {error && (
+          <div className="admin-error" style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+            <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {error}
+          </div>
+        )}
+
+        <div className="admin-confirm-actions" style={{ marginTop: "1.25rem" }}>
+          <button className="admin-secondary-button" onClick={onClose}>Cancelar</button>
+          <button
+            className="admin-primary-button"
+            disabled={saving || !perfumeId || !volumeMl || !customerName.trim()}
+            onClick={() => void confirm()}
+          >
+            <UserPlus size={15} /> {saving ? "Registrando…" : "Registrar pedido"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Criador de remessa ────────────────────────────────────────────────────────
@@ -275,8 +415,16 @@ function RemessaCreator({
   );
 }
 
-// ─── Lista de remessas com select de status ───────────────────────────────────
-function RemessasList({ remessas, onStatusChange }: { remessas: Remessa[]; onStatusChange: (id: string, status: RemessaStatus) => Promise<void> }) {
+// ─── Lista de remessas com select de status e botão de deletar ────────────────
+function RemessasList({
+  remessas,
+  onStatusChange,
+  onDelete,
+}: {
+  remessas: Remessa[];
+  onStatusChange: (id: string, status: RemessaStatus) => Promise<void>;
+  onDelete: (id: string, customerName: string) => void;
+}) {
   const statusColors: Record<RemessaStatus, string> = {
     confirmado: "#2563eb",
     separado: "#d97706",
@@ -310,23 +458,41 @@ function RemessasList({ remessas, onStatusChange }: { remessas: Remessa[]; onSta
                   {formatDate(remessa.createdAt)} · {remessa.orderIds.length} pedido(s)
                 </div>
               </div>
-              {/* Select de status da remessa */}
-              <select
-                value={status}
-                onChange={(e) => void onStatusChange(remessa.id!, e.target.value as RemessaStatus)}
-                style={{
-                  fontSize: "0.78rem", padding: "3px 8px", borderRadius: 99,
-                  border: "1px solid",
-                  borderColor: statusColors[status] || "var(--border, #e0e0e0)",
-                  color: statusColors[status] || "var(--muted)",
-                  background: "var(--surface, #fff)",
-                  fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-                }}
-              >
-                {remessaStatuses.map((s) => (
-                  <option key={s} value={s}>{remessaStatusLabel(s)}</option>
-                ))}
-              </select>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                {/* Select de status da remessa */}
+                <select
+                  value={status}
+                  onChange={(e) => void onStatusChange(remessa.id!, e.target.value as RemessaStatus)}
+                  style={{
+                    fontSize: "0.78rem", padding: "3px 8px", borderRadius: 99,
+                    border: "1px solid",
+                    borderColor: statusColors[status] || "var(--border, #e0e0e0)",
+                    color: statusColors[status] || "var(--muted)",
+                    background: "var(--surface, #fff)",
+                    fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  {remessaStatuses.map((s) => (
+                    <option key={s} value={s}>{remessaStatusLabel(s)}</option>
+                  ))}
+                </select>
+                {/* Botão de deletar remessa */}
+                <button
+                  onClick={() => onDelete(remessa.id!, remessa.customerName)}
+                  title="Excluir remessa"
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--muted)", padding: "3px 4px", borderRadius: 4,
+                    display: "flex", alignItems: "center",
+                    transition: "color 0.15s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#dc2626")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}
+                  aria-label={`Excluir remessa de ${remessa.customerName}`}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               {remessa.orderSummaries.map((summary) => (
@@ -361,6 +527,8 @@ export default function AdminPage() {
   const [recalibrating, setRecalibrating] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [remessaCreatorOpen, setRemessaCreatorOpen] = useState(false);
+  const [orderCreatorOpen, setOrderCreatorOpen] = useState(false);
+  const [deleteRemessaTarget, setDeleteRemessaTarget] = useState<{ id: string; customerName: string } | null>(null);
   const [notice, setNotice] = useState("");
   const [messagePerfume, setMessagePerfume] = useState<Record<string, unknown> | null>(null);
 
@@ -489,6 +657,22 @@ export default function AdminPage() {
   const handleRemessaStatus = async (remessaId: string, status: RemessaStatus) => {
     try { await updateRemessaStatus(remessaId, status); }
     catch { setOrdersError("Não foi possível atualizar o status da remessa."); }
+  };
+
+  const handleDeleteRemessa = (id: string, customerName: string) => {
+    setDeleteRemessaTarget({ id, customerName });
+  };
+
+  const confirmDeleteRemessa = async () => {
+    if (!deleteRemessaTarget) return;
+    try {
+      await deleteRemessa(deleteRemessaTarget.id);
+      setNotice(`Remessa de ${deleteRemessaTarget.customerName} excluída. Os pedidos voltaram para a fila.`);
+    } catch {
+      setOrdersError("Não foi possível excluir a remessa.");
+    } finally {
+      setDeleteRemessaTarget(null);
+    }
   };
 
   const recalibrateAvailability = async () => {
@@ -640,6 +824,7 @@ export default function AdminPage() {
                 {legacyOrders.length > 0 && <button className="admin-secondary-button" onClick={() => void migrateLegacyOrders()} disabled={migrating}><RefreshCw size={15} /> {migrating ? "Migrando…" : "Migrar legados"}</button>}
                 {removableOrderCount > 0 && <button className="admin-secondary-button admin-clear-button" onClick={requestClearRemovable}><Trash2 size={15} /> Limpar cancelados</button>}
                 <button className="admin-secondary-button" onClick={() => window.location.reload()}><RefreshCw size={15} /> Atualizar</button>
+                <button className="admin-primary-button" onClick={() => setOrderCreatorOpen(true)}><UserPlus size={15} /> Novo pedido</button>
               </div>
             </div>
             <label className="admin-search" style={{ marginBottom: "1rem" }}><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente ou perfume" /></label>
@@ -702,7 +887,11 @@ export default function AdminPage() {
                 <Archive size={16} /> Nova remessa
               </button>
             </div>
-            <RemessasList remessas={remessas} onStatusChange={handleRemessaStatus} />
+            <RemessasList
+              remessas={remessas}
+              onStatusChange={handleRemessaStatus}
+              onDelete={handleDeleteRemessa}
+            />
           </section>
         )}
 
@@ -715,6 +904,21 @@ export default function AdminPage() {
               <div className="admin-confirm-actions">
                 <button className="admin-secondary-button" onClick={() => setClearDialogOpen(false)}>Cancelar</button>
                 <button className="admin-primary-button admin-danger-button" onClick={() => void clearRemovableOrders()}><Trash2 size={15} /> Confirmar limpeza</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmação de exclusão de remessa */}
+        {deleteRemessaTarget && (
+          <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setDeleteRemessaTarget(null)}>
+            <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-remessa-title">
+              <div className="admin-eyebrow"><span /> confirmação</div>
+              <h2 id="delete-remessa-title">Excluir esta remessa?</h2>
+              <p>A remessa de <strong>{deleteRemessaTarget.customerName}</strong> será excluída e os pedidos vinculados voltarão para a fila sem remessa. Esta ação não pode ser desfeita.</p>
+              <div className="admin-confirm-actions">
+                <button className="admin-secondary-button" onClick={() => setDeleteRemessaTarget(null)}>Cancelar</button>
+                <button className="admin-primary-button admin-danger-button" onClick={() => void confirmDeleteRemessa()}><Trash2 size={15} /> Excluir remessa</button>
               </div>
             </div>
           </div>
@@ -746,6 +950,14 @@ export default function AdminPage() {
             remessas={remessas}
             onClose={() => setRemessaCreatorOpen(false)}
             onCreated={(msg) => { setRemessaCreatorOpen(false); setNotice(msg); setTab("remessas"); }}
+          />
+        )}
+
+        {orderCreatorOpen && (
+          <OrderCreator
+            perfumes={rawPerfumes}
+            onClose={() => setOrderCreatorOpen(false)}
+            onCreated={(msg) => { setOrderCreatorOpen(false); setNotice(msg); }}
           />
         )}
       </main>
