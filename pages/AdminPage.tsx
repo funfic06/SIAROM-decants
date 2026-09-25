@@ -199,7 +199,7 @@ function ClientesTab({
       {visible.length === 0 ? (
         <div className="admin-empty">
           {clientes.length === 0
-            ? "Nenhum cliente cadastrado. Use "Novo cliente" para começar."
+            ? "Nenhum cliente cadastrado. Use \u201cNovo cliente\u201d para começar."
             : "Nenhum cliente encontrado para esta busca."}
         </div>
       ) : (
