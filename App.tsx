@@ -6,11 +6,11 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import PrivateGate from "./components/PrivateGate";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { CatalogProvider } from "./contexts/CatalogContext";
+import { ClientesProvider } from "./contexts/ClientesContext";
 import { StorefrontProvider } from "./contexts/StorefrontContext";
 import Home from "./pages/Home";
 import ProductDetail from "./pages/ProductDetail";
 import AdminPage from "./pages/AdminPage";
-
 
 function Router() {
   return (
@@ -20,16 +20,10 @@ function Router() {
       <Route path="/admin" component={AdminPage} />
       <Route path="/admin.html" component={AdminPage} />
       <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>
   );
 }
-
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
 
 function App() {
   return (
@@ -37,12 +31,14 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <CatalogProvider>
-            <StorefrontProvider>
-              <Toaster />
-              <PrivateGate>
-                <Router />
-              </PrivateGate>
-            </StorefrontProvider>
+            <ClientesProvider>
+              <StorefrontProvider>
+                <Toaster />
+                <PrivateGate>
+                  <Router />
+                </PrivateGate>
+              </StorefrontProvider>
+            </ClientesProvider>
           </CatalogProvider>
         </TooltipProvider>
       </ThemeProvider>

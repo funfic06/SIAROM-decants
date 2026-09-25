@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
 
 export const FIREBASE_CONFIG = {
   apiKey: "AIzaSyCzrmQ5YK3aaxek0xVclp9vxYSEX7NlUag",
@@ -19,6 +19,7 @@ export const ordersRef = collection(firestore, "pedidos");
 export const apcStatusRef = collection(firestore, "apcStatus");
 export const stockStatusRef = collection(firestore, "stockStatus");
 export const remessasRef = collection(firestore, "remessas");
+export const clientesRef = collection(firestore, "clientes");
 
 export type CatalogDocument = { perfumes: Record<string, unknown>[]; updatedAt?: string };
 
@@ -33,19 +34,17 @@ export type CustomerOrder = {
   customerName: string;
   contact: string;
   payment: string;
-  // status do pedido em si: apenas novo ou cancelado — o progresso fica na remessa
   status: "novo" | "cancelado";
   createdAt: string;
   source: "catalogo";
   legacyRef?: string;
   isApc?: boolean;
-  remessaId?: string; // preenchido quando o pedido é vinculado a uma remessa
+  remessaId?: string;
 };
 
 export type ApcStatus = { perfumeId: string; reserved: boolean; orderId: string; volumeMl?: number; reservedAt: string };
 export type StockStatus = { perfumeId: string; reservedMl: number; lastOrderId?: string; updatedAt: string };
 
-// Status possíveis de uma remessa
 export type RemessaStatus = "confirmado" | "separado" | "enviado" | "cancelado";
 
 export type Remessa = {
@@ -62,6 +61,15 @@ export type Remessa = {
   }>;
 };
 
+// ─── Tipo Cliente ─────────────────────────────────────────────────────────────
+export type Cliente = {
+  id?: string;
+  nome: string;
+  telefone: string;
+  criadoEm: string;
+};
+
+// ─── Catálogo ─────────────────────────────────────────────────────────────────
 export function subscribeCatalog(onData: (data: CatalogDocument, fromServer: boolean) => void, onError: (error: Error) => void): Unsubscribe {
   return onSnapshot(catalogRef, (snapshot) => {
     const data = snapshot.exists() ? snapshot.data() as CatalogDocument : { perfumes: [] };
@@ -86,6 +94,7 @@ export async function getAdminProfile(user: User) {
   return profile.exists() && profile.data().role === "admin";
 }
 
+// ─── Pedidos ──────────────────────────────────────────────────────────────────
 export function subscribeOrders(onData: (orders: CustomerOrder[], fromServer: boolean) => void, onError: (error: Error) => void): Unsubscribe {
   return onSnapshot(ordersRef, (snapshot) => {
     const orders = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as CustomerOrder));
@@ -175,7 +184,7 @@ export async function saveCatalog(perfumes: Record<string, unknown>[]) {
   await setDoc(catalogRef, { perfumes, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
-// Cria remessa com status inicial "confirmado" e vincula os pedidos (sem alterar status deles)
+// ─── Remessas ─────────────────────────────────────────────────────────────────
 export async function createRemessa(
   orderIds: string[],
   customerName: string,
@@ -191,7 +200,6 @@ export async function createRemessa(
     orderIds,
     orderSummaries,
   });
-  // Apenas vincula o pedido à remessa, sem mudar status do pedido
   orderIds.forEach((orderId) => {
     batch.update(doc(firestore, "pedidos", orderId), { remessaId: remessaRef.id, updatedAt: now });
   });
@@ -199,12 +207,10 @@ export async function createRemessa(
   return remessaRef.id;
 }
 
-// Atualiza o status de uma remessa
 export async function updateRemessaStatus(remessaId: string, status: RemessaStatus): Promise<void> {
   await updateDoc(doc(firestore, "remessas", remessaId), { status, updatedAt: new Date().toISOString() });
 }
 
-// Deleta uma remessa e desvincula os pedidos associados
 export async function deleteRemessa(remessaId: string): Promise<void> {
   const remessaRef = doc(firestore, "remessas", remessaId);
   const remessaSnapshot = await getDoc(remessaRef);
@@ -212,7 +218,6 @@ export async function deleteRemessa(remessaId: string): Promise<void> {
   const remessa = remessaSnapshot.data() as Remessa;
   const batch = writeBatch(firestore);
   const now = new Date().toISOString();
-  // Desvincula cada pedido (remove remessaId)
   (remessa.orderIds || []).forEach((orderId) => {
     batch.update(doc(firestore, "pedidos", orderId), { remessaId: null, updatedAt: now });
   });
@@ -220,6 +225,32 @@ export async function deleteRemessa(remessaId: string): Promise<void> {
   await batch.commit();
 }
 
+// ─── Clientes ─────────────────────────────────────────────────────────────────
+export function subscribeClientes(
+  onData: (clientes: Cliente[]) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(clientesRef, (snapshot) => {
+    const clientes = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Cliente));
+    clientes.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    onData(clientes);
+  }, onError);
+}
+
+export async function createCliente(cliente: Omit<Cliente, "id">): Promise<string> {
+  const ref = await addDoc(clientesRef, cliente);
+  return ref.id;
+}
+
+export async function updateCliente(id: string, data: Partial<Omit<Cliente, "id">>): Promise<void> {
+  await updateDoc(doc(firestore, "clientes", id), data);
+}
+
+export async function deleteCliente(id: string): Promise<void> {
+  await deleteDoc(doc(firestore, "clientes", id));
+}
+
+// ─── APC / Stock sync ─────────────────────────────────────────────────────────
 export async function syncApcStatus(entries: Array<Omit<ApcStatus, "reservedAt">>) {
   const currentStatus = await getDocs(apcStatusRef);
   const activePerfumeIds = new Set(entries.map((entry) => entry.perfumeId));
