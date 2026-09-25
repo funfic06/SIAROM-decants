@@ -312,7 +312,7 @@ function ClientesTab({ clientes, onAdd, onEdit, onDelete, query, onQuery }: { cl
       </label>
       {visible.length === 0 ? (
         <div className="admin-empty">
-          {clientes.length === 0 ? "Nenhum cliente cadastrado. Use "Novo cliente" para começar." : "Nenhum cliente encontrado para esta busca."}
+          {clientes.length === 0 ? "Nenhum cliente cadastrado. Use \u201cNovo cliente\u201d para começar." : "Nenhum cliente encontrado para esta busca."}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
