@@ -19,7 +19,7 @@ type PerfumeForm = Record<string, unknown> & {
 const volumes = [3, 7, 10, 15, 20, 30];
 const genders = ["Compartilhável", "Masculino", "Feminino"];
 const defaultDeliveryText = "Os frascos são enviados com identificação da fragrância e do volume. Embalados em caixas com proteção para manter os frascos intactos, visando preservar a experiência completa da fragrância.";
-const remessaStatuses: RemessaStatus[] = ["confirmado", "separado", "enviado", "cancelado"];
+const remessaStatuses: RemessaStatus[] = ["confirmado", "separado", "enviado", "entregue", "cancelado"];
 
 const emptyForm = (): PerfumeForm => ({
   id: "", name: "", brand: "", type: "", pricePerMl: "", recavePrice: "8,00", totalMl: "", imageUrl: "", obs: "",
@@ -35,7 +35,7 @@ function parseVolumeList(value: string) {
   return Array.from(new Set(value.split(",").map((item) => Number.parseFloat(item.trim().replace(",", "."))).filter((item) => Number.isFinite(item) && item > 0))).sort((left, right) => left - right);
 }
 function remessaStatusLabel(value: string) {
-  return ({ confirmado: "Confirmado", separado: "Separado", enviado: "Enviado", cancelado: "Cancelado" } as Record<string, string>)[value] || value;
+  return ({ confirmado: "Confirmado", separado: "Separado", enviado: "Enviado", entregue: "Entregue", cancelado: "Cancelado" } as Record<string, string>)[value] || value;
 }
 function paymentLabel(value: string) { return ({ pix: "Pix", cartao_credito: "Cartão de crédito" } as Record<string, string>)[value] || (value ? value : "Pagamento a definir"); }
 function formatDate(iso: string) {
@@ -474,11 +474,12 @@ function RemessaCreator({ orders, remessas, onClose, onCreated }: { orders: (Cus
 }
 
 // ─── Lista de remessas ────────────────────────────────────────────────────────
-function RemessasList({ remessas, onStatusChange, onDelete }: { remessas: Remessa[]; onStatusChange: (id: string, status: RemessaStatus) => Promise<void>; onDelete: (id: string, customerName: string) => void }) {
+function RemessasList({ remessas, onStatusChange, onDelete }: { remessas: Remessa[]; onStatusChange: (id: string, status: RemessaStatus) => Promise<void>; onDelete: (id: string, customerName: string, status: RemessaStatus) => void }) {
   const statusColors: Record<RemessaStatus, { bg: string; color: string }> = {
     confirmado: { bg: "#EFF6FF", color: "#2563EB" },
     separado:   { bg: "#FFFBEB", color: "#D97706" },
     enviado:    { bg: "#F5F3FF", color: "#7C3AED" },
+    entregue:   { bg: "#ECFDF5", color: "#059669" },
     cancelado:  { bg: "#FEF2F2", color: "#DC2626" },
   };
 
@@ -501,7 +502,7 @@ function RemessasList({ remessas, onStatusChange, onDelete }: { remessas: Remess
                   style={{ fontSize: "0.76rem", padding: "3px 10px", borderRadius: 99, border: `1px solid ${sc.color}33`, color: sc.color, background: sc.bg, fontWeight: 600, cursor: "pointer" }}>
                   {remessaStatuses.map((s) => <option key={s} value={s}>{remessaStatusLabel(s)}</option>)}
                 </select>
-                <button onClick={() => onDelete(remessa.id!, remessa.customerName)} title="Excluir remessa"
+                <button onClick={() => onDelete(remessa.id!, remessa.customerName, status)} title="Excluir remessa"
                   style={{ background: "none", border: "1px solid var(--border)", cursor: "pointer", color: "var(--muted)", padding: "4px 6px", borderRadius: "var(--radius-sm)", display: "flex", alignItems: "center", transition: "all 0.15s" }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "rgba(220,38,38,0.3)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
@@ -543,7 +544,7 @@ export default function AdminPage() {
   const [orderCreatorOpen, setOrderCreatorOpen] = useState(false);
   const [clienteEditorTarget, setClienteEditorTarget] = useState<Cliente | null | "new">(null);
   const [deleteClienteTarget, setDeleteClienteTarget] = useState<Cliente | null>(null);
-  const [deleteRemessaTarget, setDeleteRemessaTarget] = useState<{ id: string; customerName: string } | null>(null);
+  const [deleteRemessaTarget, setDeleteRemessaTarget] = useState<{ id: string; customerName: string; status: RemessaStatus } | null>(null);
   const [notice, setNotice] = useState("");
   const [messagePerfume, setMessagePerfume] = useState<Record<string, unknown> | null>(null);
 
@@ -597,7 +598,7 @@ export default function AdminPage() {
   const toggleAvailability = async (raw: Record<string, unknown>) => { try { await saveRawPerfumes(rawPerfumes.map((item) => text(item.id) === text(raw.id) ? { ...item, available: item.available === false } : item)); } catch { setNotice("Não foi possível atualizar."); } };
   const handleCancelOrder = async (order: CustomerOrder & { legacy?: boolean }) => { if (order.legacy || !order.id) return; if (!window.confirm(`Cancelar o pedido de ${order.customerName}?`)) return; try { await cancelCustomerOrder(order.id); setNotice("Pedido cancelado."); } catch { setOrdersError("Não foi possível cancelar."); } };
   const handleRemessaStatus = async (remessaId: string, status: RemessaStatus) => { try { await updateRemessaStatus(remessaId, status); } catch { setOrdersError("Não foi possível atualizar o status."); } };
-  const handleDeleteRemessa = (id: string, customerName: string) => setDeleteRemessaTarget({ id, customerName });
+  const handleDeleteRemessa = (id: string, customerName: string, status: RemessaStatus) => setDeleteRemessaTarget({ id, customerName, status });
   const confirmDeleteRemessa = async () => { if (!deleteRemessaTarget) return; try { await deleteRemessa(deleteRemessaTarget.id); setNotice(`Remessa de ${deleteRemessaTarget.customerName} excluída.`); } catch { setOrdersError("Não foi possível excluir a remessa."); } finally { setDeleteRemessaTarget(null); } };
   const handleDeleteCliente = async () => { if (!deleteClienteTarget?.id) return; try { await deleteCliente(deleteClienteTarget.id); setNotice(`Cliente ${deleteClienteTarget.nome} removido.`); } catch { setNotice("Não foi possível remover o cliente."); } finally { setDeleteClienteTarget(null); } };
 
@@ -849,7 +850,11 @@ export default function AdminPage() {
         <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setDeleteRemessaTarget(null)}>
           <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="del-remessa-title">
             <div className="admin-eyebrow"><span /> confirmação</div><h2 id="del-remessa-title">Excluir esta remessa?</h2>
-            <p>A remessa de <strong>{deleteRemessaTarget.customerName}</strong> será excluída e os pedidos voltarão para a fila.</p>
+            {deleteRemessaTarget.status === "entregue" ? (
+              <p>A remessa entregue de <strong>{deleteRemessaTarget.customerName}</strong> será excluída e <strong>os pedidos também serão excluídos permanentemente</strong>. Eles não voltarão para a fila.</p>
+            ) : (
+              <p>A remessa de <strong>{deleteRemessaTarget.customerName}</strong> será excluída e os pedidos voltarão para a fila.</p>
+            )}
             <div className="admin-confirm-actions"><button className="admin-secondary-button" onClick={() => setDeleteRemessaTarget(null)}>Cancelar</button><button className="admin-primary-button admin-danger-button" onClick={() => void confirmDeleteRemessa()}><Trash2 size={15} /> Excluir</button></div>
           </div>
         </div>

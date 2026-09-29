@@ -45,7 +45,7 @@ export type CustomerOrder = {
 export type ApcStatus = { perfumeId: string; reserved: boolean; orderId: string; volumeMl?: number; reservedAt: string };
 export type StockStatus = { perfumeId: string; reservedMl: number; lastOrderId?: string; updatedAt: string };
 
-export type RemessaStatus = "confirmado" | "separado" | "enviado" | "cancelado";
+export type RemessaStatus = "confirmado" | "separado" | "enviado" | "entregue" | "cancelado";
 
 export type Remessa = {
   id?: string;
@@ -216,9 +216,20 @@ export async function deleteRemessa(remessaId: string): Promise<void> {
   const remessaSnapshot = await getDoc(remessaRef);
   if (!remessaSnapshot.exists()) return;
   const remessa = remessaSnapshot.data() as Remessa;
+  const orderIds = remessa.orderIds || [];
+
+  if (remessa.status === "entregue") {
+    // Remessa entregue: os pedidos são excluídos junto e NÃO voltam para a lista.
+    // Usa deleteCustomerOrders para também liberar estoque/APC corretamente.
+    await deleteCustomerOrders(orderIds);
+    await deleteDoc(remessaRef);
+    return;
+  }
+
+  // Qualquer outro status: os pedidos voltam para a lista de pedidos.
   const batch = writeBatch(firestore);
   const now = new Date().toISOString();
-  (remessa.orderIds || []).forEach((orderId) => {
+  orderIds.forEach((orderId) => {
     batch.update(doc(firestore, "pedidos", orderId), { remessaId: null, updatedAt: now });
   });
   batch.delete(remessaRef);
