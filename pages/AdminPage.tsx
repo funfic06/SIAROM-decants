@@ -535,6 +535,7 @@ export default function AdminPage() {
   const [remessas, setRemessas] = useState<Remessa[]>([]);
   const [tab, setTab] = useState<"perfumes" | "pedidos" | "clientes" | "remessas">("perfumes");
   const [query, setQuery] = useState("");
+  const [perfumeFilter, setPerfumeFilter] = useState<"todos" | "publicados" | "ocultos">("todos");
   const [editing, setEditing] = useState<PerfumeForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -577,7 +578,13 @@ export default function AdminPage() {
   const orderTotals = useMemo(() => { const totals = new Map<string, number>(); [...orders, ...legacyOrders].forEach((o) => totals.set(o.perfumeId, (totals.get(o.perfumeId) || 0) + 1)); return totals; }, [orders, legacyOrders]);
   const remessaById = useMemo(() => new Map(remessas.map((r) => [r.id!, r])), [remessas]);
   const remessaOrderIds = useMemo(() => new Set(remessas.flatMap((r) => r.orderIds)), [remessas]);
-  const visiblePerfumes = useMemo(() => rawPerfumes.filter((raw) => { const q = query.toLowerCase(); return !q || `${text(raw.name)} ${text(raw.brand)} ${normalizeGender(raw.gender || raw.type || raw.family)}`.toLowerCase().includes(q); }), [rawPerfumes, query]);
+  const perfumeCounts = useMemo(() => { const hidden = rawPerfumes.filter((raw) => raw.available === false).length; return { todos: rawPerfumes.length, publicados: rawPerfumes.length - hidden, ocultos: hidden }; }, [rawPerfumes]);
+  const visiblePerfumes = useMemo(() => rawPerfumes.filter((raw) => {
+    if (perfumeFilter === "publicados" && raw.available === false) return false;
+    if (perfumeFilter === "ocultos" && raw.available !== false) return false;
+    const q = query.toLowerCase();
+    return !q || `${text(raw.name)} ${text(raw.brand)} ${normalizeGender(raw.gender || raw.type || raw.family)}`.toLowerCase().includes(q);
+  }), [rawPerfumes, query, perfumeFilter]);
   const visibleOrders = useMemo(() => [...orders.map((o) => ({ ...o, legacy: false })), ...legacyOrders].filter((o) => !query || `${o.customerName} ${o.perfumeName} ${o.contact}`.toLowerCase().includes(query.toLowerCase())), [orders, legacyOrders, query]);
   const activeOrdersCount = orders.filter((o) => o.status !== "cancelado").length;
   const removableOrderCount = orders.filter((o) => o.status === "cancelado").length;
@@ -728,9 +735,14 @@ export default function AdminPage() {
                 <button className="admin-primary-button" onClick={() => setEditing(emptyForm())}><Plus size={16} /> Novo perfume</button>
               </div>
               <label className="admin-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nome, marca ou gênero" /></label>
+              <div className="admin-tabs" role="group" aria-label="Filtrar perfumes por visibilidade" style={{ marginBottom: 16 }}>
+                <button className={perfumeFilter === "todos" ? "active" : ""} onClick={() => setPerfumeFilter("todos")}>Todos <span>{perfumeCounts.todos}</span></button>
+                <button className={perfumeFilter === "publicados" ? "active" : ""} onClick={() => setPerfumeFilter("publicados")}><Eye size={14} /> Disponíveis <span>{perfumeCounts.publicados}</span></button>
+                <button className={perfumeFilter === "ocultos" ? "active" : ""} onClick={() => setPerfumeFilter("ocultos")}><EyeOff size={14} /> Ocultos <span>{perfumeCounts.ocultos}</span></button>
+              </div>
               <div className="admin-perfume-list">
                 {visiblePerfumes.length === 0 ? (
-                  <div className="admin-empty">Nenhum perfume encontrado.</div>
+                  <div className="admin-empty">{perfumeFilter === "ocultos" && !query ? "Nenhum perfume oculto." : perfumeFilter === "publicados" && !query ? "Nenhum perfume disponível." : "Nenhum perfume encontrado."}</div>
                 ) : visiblePerfumes.map((raw) => {
                   const perfumeId = text(raw.id) || text(raw.name);
                   const totalOrders = orderTotals.get(perfumeId) || 0;
