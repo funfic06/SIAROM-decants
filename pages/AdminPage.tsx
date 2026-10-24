@@ -6,6 +6,7 @@ import { useCatalog } from "@/contexts/CatalogContext";
 import { useClientes } from "@/contexts/ClientesContext";
 import { cancelCustomerOrder, createCliente, createCustomerOrder, createRemessa, deleteCliente, deleteCustomerOrders, deleteRemessa, getAdminProfile, signInAdmin, signOutAdmin, subscribeAuth, subscribeOrders, subscribeRemessas, syncApcStatus, syncStockStatus, updateCliente, updateRemessaStatus, type Cliente, type CustomerOrder, type Remessa, type RemessaStatus } from "@/lib/firebase";
 import { buildWhatsappMessage, logoMark, normalizeGender } from "@/lib/catalog";
+import { buildRemessaMessage, brl, parseMoney, DEFAULT_RECRAVE_PRICE } from "@/lib/remessaMessage";
 import type { User } from "firebase/auth";
 
 type PerfumeForm = Record<string, unknown> & {
@@ -16,13 +17,13 @@ type PerfumeForm = Record<string, unknown> & {
   prices: Record<string, string | null>; customVolumes: string; orders: unknown[];
 };
 
-const volumes = [3, 7, 10, 15, 20, 30];
+const volumes = [3, 5, 7, 10, 15, 20];
 const genders = ["Compartilhável", "Masculino", "Feminino"];
 const defaultDeliveryText = "Os frascos são enviados com identificação da fragrância e do volume. Embalados em caixas com proteção para manter os frascos intactos, visando preservar a experiência completa da fragrância.";
 const remessaStatuses: RemessaStatus[] = ["confirmado", "separado", "enviado", "entregue", "cancelado"];
 
 const emptyForm = (): PerfumeForm => ({
-  id: "", name: "", brand: "", type: "", pricePerMl: "", recavePrice: "8,00", totalMl: "", imageUrl: "", obs: "",
+  id: "", name: "", brand: "", type: "", pricePerMl: "", recavePrice: "6,86", totalMl: "", imageUrl: "", obs: "",
   shortDescription: "", description: "", accords: ["", "", "", "", ""], deliveryText: defaultDeliveryText,
   referenceUrl: "",
   available: true, hasApc: false, apcMl: 40, apcFrasco: "10,00", apcLimit: "1",
@@ -47,7 +48,7 @@ function formFromRaw(raw: Record<string, unknown>): PerfumeForm {
   return {
     ...emptyForm(), ...raw,
     id: text(raw.id), name: text(raw.name), brand: text(raw.brand), type: normalizeGender(raw.gender || raw.type || raw.family),
-    pricePerMl: text(raw.pricePerMl), recavePrice: text(raw.recavePrice || "8,00"), totalMl: text(raw.totalMl), imageUrl: text(raw.imageUrl), obs: text(raw.obs),
+    pricePerMl: text(raw.pricePerMl), recavePrice: text(raw.recavePrice || "6,86"), totalMl: text(raw.totalMl), imageUrl: text(raw.imageUrl), obs: text(raw.obs),
     shortDescription: text(raw.shortDescription), description: text(raw.description),
     accords: Array.isArray(raw.accords) ? raw.accords.map(text).slice(0, 5).concat(["", "", "", "", ""]).slice(0, 5) : emptyForm().accords,
     deliveryText: text(raw.deliveryText || defaultDeliveryText), referenceUrl: text(raw.referenceUrl),
@@ -183,9 +184,9 @@ function PerfumeEditor({ initial, onCancel, onSave, saving }: { initial: Perfume
         <label><span>Marca *</span><input value={form.brand} onChange={(e) => set("brand", e.target.value)} placeholder="Ex.: Maison Francis Kurkdjian" /></label>
         <label><span>Gênero *</span><select value={form.type} required onChange={(e) => set("type", e.target.value)}><option value="" disabled>Selecione o gênero</option>{genders.map((g) => <option key={g} value={g}>{g}</option>)}</select></label>
         <label><span>Preço por ml (R$)</span><input value={form.pricePerMl} onChange={(e) => set("pricePerMl", e.target.value)} placeholder="Ex.: 5,50" /></label>
-        <label><span>Taxa de recave (R$)</span><input value={form.recavePrice} onChange={(e) => set("recavePrice", e.target.value)} placeholder="8,00" /></label>
+        <label><span>Taxa de recave (R$)</span><input value={form.recavePrice} onChange={(e) => set("recavePrice", e.target.value)} placeholder="6,86" /></label>
         <label><span>Total disponível (ml)</span><input type="number" min="0" value={form.totalMl} onChange={(e) => set("totalMl", e.target.value)} placeholder="Ex.: 100" /></label>
-        <label className="admin-form-wide"><span>Volumes disponíveis (ml)</span><input value={form.customVolumes} onChange={(e) => set("customVolumes", e.target.value)} placeholder="Ex.: 3, 7, 10, 25" /><small style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: 3 }}>Opcional. Separe por vírgula. Se vazio, usa 3, 7, 10, 15, 20 e 30 ml.</small></label>
+        <label className="admin-form-wide"><span>Volumes disponíveis (ml)</span><input value={form.customVolumes} onChange={(e) => set("customVolumes", e.target.value)} placeholder="Ex.: 3, 7, 10, 25" /><small style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: 3 }}>Opcional. Separe por vírgula. Se vazio, usa 3, 5, 7, 10, 15 e 20 ml.</small></label>
         <label className="admin-form-wide"><span>URL da imagem</span><input type="url" value={form.imageUrl} onChange={(e) => set("imageUrl", e.target.value)} placeholder="https://…" /></label>
         <label className="admin-form-wide"><span>Observação</span><textarea value={form.obs} onChange={(e) => set("obs", e.target.value)} placeholder="Lote, conservação ou observação para a equipe." /></label>
       </div>
@@ -401,12 +402,17 @@ function OrderCreator({ perfumes, clientes, onClose, onCreated }: { perfumes: Re
 }
 
 // ─── Criador de remessa ────────────────────────────────────────────────────────
-function RemessaCreator({ orders, remessas, onClose, onCreated }: { orders: (CustomerOrder & { legacy?: boolean })[]; remessas: Remessa[]; onClose: () => void; onCreated: (notice: string) => void }) {
+function RemessaCreator({ orders, remessas, clientes, rawPerfumes, onClose, onCreated }: { orders: (CustomerOrder & { legacy?: boolean })[]; remessas: Remessa[]; clientes: Cliente[]; rawPerfumes: Record<string, unknown>[]; onClose: () => void; onCreated: (notice: string) => void }) {
   const remessaOrderIds = useMemo(() => new Set(remessas.flatMap((r) => r.orderIds)), [remessas]);
   const activeOrders = orders.filter((o) => !o.legacy && o.id && o.status !== "cancelado" && !remessaOrderIds.has(o.id));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [recraves, setRecraves] = useState("");
+  const [recraveRateInput, setRecraveRateInput] = useState<string | null>(null);
+  const [pixTotal, setPixTotal] = useState("");
+  const [messageEdit, setMessageEdit] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const toggle = (id: string) => {
     const order = activeOrders.find((o) => o.id === id); if (!order) return;
@@ -415,6 +421,14 @@ function RemessaCreator({ orders, remessas, onClose, onCreated }: { orders: (Cus
 
   const selectedOrders = activeOrders.filter((o) => selected.has(o.id!));
   const customerName = selectedOrders[0]?.customerName || "";
+  const perfumeRate = (order: CustomerOrder) => { const raw = rawPerfumes.find((r) => text(r.id) === order.perfumeId || text(r.name) === order.perfumeName); return parseMoney(raw ? text(raw.recavePrice) : "") || DEFAULT_RECRAVE_PRICE; };
+  const autoRate = (() => { if (!selectedOrders.length) return DEFAULT_RECRAVE_PRICE; const counts = new Map<number, number>(); selectedOrders.forEach((o) => { const r = perfumeRate(o); counts.set(r, (counts.get(r) || 0) + 1); }); return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0]; })();
+  const recraveRate = recraveRateInput !== null ? parseMoney(recraveRateInput) : autoRate;
+  const cliente = clientes.find((c) => c.nome.trim().toLowerCase() === customerName.trim().toLowerCase());
+  const customerNumber = cliente?.telefone || selectedOrders.find((o) => o.contact)?.contact || "";
+  const generatedMessage = selectedOrders.length ? buildRemessaMessage({ customerName, customerNumber, items: selectedOrders.map((o) => ({ perfumeName: o.perfumeName, volumeMl: o.volumeMl, quantity: o.quantity || 1, unitPrice: o.unitPrice || 0, isApc: o.isApc })), recraves: Math.max(0, Math.floor(Number(recraves) || 0)), recravePrice: recraveRate, pixTotal }) : "";
+  const message = messageEdit ?? generatedMessage;
+  const copyMessage = async () => { try { await navigator.clipboard.writeText(message); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setError("Não foi possível copiar. Selecione o texto e copie manualmente."); } };
   const ordersByCustomer = useMemo(() => { const map = new Map<string, typeof activeOrders>(); activeOrders.forEach((o) => { const name = o.customerName || "Sem nome"; if (!map.has(name)) map.set(name, []); map.get(name)!.push(o); }); return map; }, [activeOrders]);
 
   const confirm = async () => {
@@ -459,6 +473,19 @@ function RemessaCreator({ orders, remessas, onClose, onCreated }: { orders: (Cus
               ))}
             </div>
             {selected.size > 0 && <div style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "var(--text-secondary)" }}><strong>{selected.size}</strong> pedido(s) selecionado(s){customerName && <> · <strong>{customerName}</strong></>}</div>}
+            {selected.size > 0 && (
+              <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Mensagem para o cliente</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>
+                  <label style={{ fontSize: "0.74rem", color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3 }}>Nº de recraves<input type="number" min={0} inputMode="numeric" value={recraves} onChange={(e) => { setRecraves(e.target.value); setMessageEdit(null); }} placeholder="0" /></label>
+                  <label style={{ fontSize: "0.74rem", color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3 }}>Recrave (R$)<input value={recraveRateInput ?? autoRate.toFixed(2).replace(".", ",")} onChange={(e) => { setRecraveRateInput(e.target.value); setMessageEdit(null); }} /></label>
+                  <label style={{ fontSize: "0.74rem", color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3 }}>Total com Pix (opcional)<input value={pixTotal} onChange={(e) => { setPixTotal(e.target.value); setMessageEdit(null); }} placeholder="ex: 437,16" /></label>
+                </div>
+                <div style={{ fontSize: "0.74rem", color: "var(--muted)" }}>Recraves: {recraves || 0} × {brl(recraveRate)} (valor do cadastro do perfume). Pedidos sem preço (R$ 0,00) ficam zerados na mensagem.</div>
+                <textarea value={message} onChange={(e) => setMessageEdit(e.target.value)} rows={Math.min(14, message.split("\n").length + 1)} style={{ width: "100%", fontFamily: "inherit", fontSize: "0.82rem", padding: "0.6rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }} />
+                <button type="button" className="admin-secondary-button" onClick={() => void copyMessage()}>{copied ? <><Check size={15} /> Copiado</> : <><Copy size={15} /> Copiar mensagem</>}</button>
+              </div>
+            )}
           </>
         )}
         {error && <div className="admin-error" style={{ marginTop: "0.75rem" }}><AlertCircle size={15} style={{ flexShrink: 0 }} /> {error}</div>}
@@ -904,7 +931,7 @@ export default function AdminPage() {
       )}
 
       {remessaCreatorOpen && (
-        <RemessaCreator orders={allOrdersForRemessa} remessas={remessas} onClose={() => setRemessaCreatorOpen(false)} onCreated={(msg) => { setRemessaCreatorOpen(false); setNotice(msg); setTab("remessas"); }} />
+        <RemessaCreator orders={allOrdersForRemessa} remessas={remessas} clientes={clientes} rawPerfumes={rawPerfumes} onClose={() => setRemessaCreatorOpen(false)} onCreated={(msg) => { setRemessaCreatorOpen(false); setNotice(msg); setTab("remessas"); }} />
       )}
 
       {orderCreatorOpen && (
