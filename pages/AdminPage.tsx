@@ -436,7 +436,7 @@ function RemessaCreator({ orders, remessas, clientes, rawPerfumes, onClose, onCr
     try {
       const orderIds = Array.from(selected);
       const summaries = selectedOrders.map((o) => ({ orderId: o.id!, perfumeName: o.perfumeName, volumeMl: o.volumeMl, isApc: o.isApc }));
-      await createRemessa(orderIds, customerName || "Cliente", summaries);
+      await createRemessa(orderIds, customerName || "Cliente", summaries, message);
       onCreated(`Remessa de ${customerName || "cliente"} criada com ${orderIds.length} pedido(s).`);
     } catch { setError("Não foi possível criar a remessa. Tente novamente."); }
     finally { setSaving(false); }
@@ -500,6 +500,17 @@ function RemessaCreator({ orders, remessas, clientes, rawPerfumes, onClose, onCr
   );
 }
 
+function RemessaMessageBox({ message }: { message: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { try { await navigator.clipboard.writeText(message); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ } };
+  return (
+    <div style={{ margin: "0.5rem 0 0.75rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+      <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: "0.8rem", margin: 0, padding: "0.6rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", background: "var(--surface-raised)" }}>{message}</pre>
+      <button type="button" className="admin-secondary-button" onClick={() => void copy()} style={{ alignSelf: "flex-start" }}>{copied ? <><Check size={15} /> Copiado</> : <><Copy size={15} /> Copiar mensagem</>}</button>
+    </div>
+  );
+}
+
 // ─── Lista de remessas ────────────────────────────────────────────────────────
 function RemessasList({ remessas, onStatusChange, onDelete }: { remessas: Remessa[]; onStatusChange: (id: string, status: RemessaStatus) => Promise<void>; onDelete: (id: string, customerName: string, status: RemessaStatus) => void }) {
   const statusColors: Record<RemessaStatus, { bg: string; color: string }> = {
@@ -536,6 +547,7 @@ function RemessasList({ remessas, onStatusChange, onDelete }: { remessas: Remess
                   aria-label={`Excluir remessa de ${remessa.customerName}`}><Trash2 size={14} /></button>
               </div>
             </div>
+            {remessa.message && <RemessaMessageBox message={remessa.message} />}
             <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
               {remessa.orderSummaries.map((s) => (
                 <div key={s.orderId} style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>· {s.perfumeName} — {s.isApc ? `APC + ${s.volumeMl} ml` : `${s.volumeMl} ml`}</div>
