@@ -1383,6 +1383,8 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
   width: 100%;
   max-width: 440px;
   box-shadow: 0 20px 60px rgba(19,17,26,0.25);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 .admin-confirm-dialog h2 {
   font-size: 1.05rem;
@@ -1406,6 +1408,10 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
   justify-content: flex-end;
   flex-wrap: wrap;
   margin-top: 20px;
+  position: sticky;
+  bottom: -24px;
+  padding: 12px 0 4px;
+  background: var(--adm-surface);
 }
 
 /* ── WhatsApp message ────────────────────────────────────────────────────── */
