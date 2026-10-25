@@ -52,6 +52,7 @@ export type Remessa = {
   createdAt: string;
   customerName: string;
   status: RemessaStatus;
+  message?: string;
   orderIds: string[];
   orderSummaries: Array<{
     orderId: string;
@@ -188,7 +189,8 @@ export async function saveCatalog(perfumes: Record<string, unknown>[]) {
 export async function createRemessa(
   orderIds: string[],
   customerName: string,
-  orderSummaries: Remessa["orderSummaries"]
+  orderSummaries: Remessa["orderSummaries"],
+  message?: string
 ): Promise<string> {
   const remessaRef = doc(remessasRef);
   const batch = writeBatch(firestore);
@@ -199,6 +201,7 @@ export async function createRemessa(
     status: "confirmado" as RemessaStatus,
     orderIds,
     orderSummaries,
+    ...(message ? { message } : {}),
   });
   orderIds.forEach((orderId) => {
     batch.update(doc(firestore, "pedidos", orderId), { remessaId: remessaRef.id, updatedAt: now });

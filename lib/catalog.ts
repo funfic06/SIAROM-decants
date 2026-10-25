@@ -91,7 +91,7 @@ export const genders = ["Compartilhável", "Masculino", "Feminino"] as const;
 export function findPerfume(slug?: string) { return perfumes.find((perfume) => perfume.slug === slug); }
 export const perfumes = seedPerfumes;
 
-const catalogVolumes = [3, 7, 10, 15, 20, 30];
+const catalogVolumes = [3, 5, 7, 10, 15, 20];
 function customVolumes(raw: Record<string, unknown>) {
   const values = Array.isArray(raw.customVolumes)
     ? raw.customVolumes.map((value) => numberValue(value)).filter((value) => value > 0)
@@ -125,7 +125,7 @@ export function adaptPerfume(raw: Record<string, unknown>, index = 0, apcStatus?
   const brand = rawText(raw.brand) || "Marca não informada";
   const rawPrices = (raw.prices && typeof raw.prices === "object" ? raw.prices : {}) as Record<string, unknown>;
   const pricePerMl = numberValue(raw.pricePerMl);
-  const recave = numberValue(raw.recavePrice) || 8;
+  const recave = numberValue(raw.recavePrice) || 6.86;
   const priceFor = (ml: number) => {
     const manual = numberValue(rawPrices[String(ml)]);
     return manual > 0 ? manual : pricePerMl > 0 ? ml * pricePerMl : 0;
@@ -184,7 +184,7 @@ export function buildWhatsappMessage(raw: Record<string, unknown>, orders: Whats
   const deliveryText = rawText(raw.deliveryText) || "Os frascos são enviados com identificação da fragrância e do volume. Embalados em caixas com proteção para manter os frascos intactos, visando preservar a experiência completa da fragrância.";
   const totalMl = numberValue(raw.totalMl);
   const pricePerMl = numberValue(raw.pricePerMl);
-  const recave = numberValue(raw.recavePrice) || 8;
+  const recave = numberValue(raw.recavePrice) || 6.86;
   const hasApc = raw.hasApc === true;
   const apcMl = numberValue(raw.apcMl) || 40;
   const apcFrasco = numberOrDefault(raw.apcFrasco, 10);
