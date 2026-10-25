@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { ArrowUpRight, Heart, Menu, Search, ShoppingBag, X, Copy, Check, Loader2, ExternalLink } from "lucide-react";
+import { ArrowUpRight, Heart, Menu, Search, ShoppingBag, X } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { formatPrice, logoMark } from "@/lib/catalog";
 import { useStorefront } from "@/contexts/StorefrontContext";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useCajupay } from "@/hooks/useCajupay";
 
 type SiteHeaderProps = {
   variant?: "home" | "detail";
@@ -16,10 +15,8 @@ export default function SiteHeader({ variant = "home" }: SiteHeaderProps) {
   const [, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
-  const [copied, setCopied] = useState(false);
 
   const { searchQuery, setSearchQuery, favoritePerfumes, toggleFavorite, bagItems, bagCount, bagTotal, removeFromBag } = useStorefront();
-  const { generateLink, reset, loading, paymentUrl, error } = useCajupay();
 
   const isDetail = variant === "detail";
 
@@ -32,27 +29,8 @@ export default function SiteHeader({ variant = "home" }: SiteHeaderProps) {
     window.setTimeout(() => document.getElementById("catalogo")?.scrollIntoView({ behavior: "smooth" }), 0);
   };
 
-  // Converte o total (que está em reais como float) para centavos
-  const totalCents = Math.round(bagTotal * 100);
-
-  const handleGenerateLink = () => {
-    generateLink(bagItems, totalCents);
-  };
-
-  const handleCopy = async () => {
-    if (!paymentUrl) return;
-    await navigator.clipboard.writeText(paymentUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  };
-
-  // Quando fechar a sacola, reseta o estado do link gerado
   const handleSheetClose = (open: boolean) => {
-    if (!open) {
-      setPanel(null);
-      reset();
-      setCopied(false);
-    }
+    if (!open) setPanel(null);
   };
 
   return <>
@@ -109,75 +87,13 @@ export default function SiteHeader({ variant = "home" }: SiteHeaderProps) {
           </div>
         )}
 
-        {/* ── Footer da sacola com integração Cajupay ── */}
+        {/* Footer da sacola */}
         {panel === "bag" && bagItems.length > 0 && (
           <SheetFooter className="storefront-sheet-footer">
             <div className="sheet-total">
               <span>Total estimado</span>
               <strong>{formatPrice(bagTotal)}</strong>
             </div>
-
-            {/* Erro da API */}
-            {error && (
-              <p style={{ fontSize: "0.75rem", color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "8px 12px", margin: "0" }}>
-                {error}
-              </p>
-            )}
-
-            {/* Link gerado — caixa de cópia */}
-            {paymentUrl && !error && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <p style={{ fontSize: "0.75rem", color: "#374151", margin: 0 }}>
-                  Link gerado! Copie e envie ao cliente:
-                </p>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  <input
-                    readOnly
-                    value={paymentUrl}
-                    style={{ flex: 1, fontSize: "0.7rem", padding: "6px 10px", borderRadius: "8px", border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", outline: "none" }}
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                  />
-                  <button
-                    onClick={handleCopy}
-                    aria-label="Copiar link"
-                    style={{ padding: "6px 10px", borderRadius: "8px", border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px", fontSize: "0.75rem", color: copied ? "#16a34a" : "#374151" }}
-                  >
-                    {copied ? <Check size={14} /> : <Copy size={14} />}
-                    {copied ? "Copiado" : "Copiar"}
-                  </button>
-                </div>
-                <a
-                  href={paymentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ fontSize: "0.7rem", color: "#6b7280", display: "flex", alignItems: "center", gap: "4px" }}
-                >
-                  <ExternalLink size={12} /> Abrir link para visualizar
-                </a>
-                {/* Botão para gerar novo link */}
-                <button
-                  onClick={() => { reset(); }}
-                  style={{ fontSize: "0.7rem", color: "#9ca3af", background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
-                >
-                  Gerar novo link para este pedido
-                </button>
-              </div>
-            )}
-
-            {/* Botão principal — gerar link */}
-            {!paymentUrl && (
-              <button
-                className="primary-button"
-                onClick={handleGenerateLink}
-                disabled={loading}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}
-              >
-                {loading
-                  ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Gerando link…</>
-                  : <>Gerar link de pagamento <ArrowUpRight size={16} /></>
-                }
-              </button>
-            )}
           </SheetFooter>
         )}
       </SheetContent>
