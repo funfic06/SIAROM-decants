@@ -8,6 +8,9 @@ import { cancelCustomerOrder, createCliente, createCustomerOrder, createRemessa,
 import { buildWhatsappMessage, logoMark, normalizeGender } from "@/lib/catalog";
 import { buildRemessaMessage, brl, parseMoney, DEFAULT_RECRAVE_PRICE } from "@/lib/remessaMessage";
 import type { User } from "firebase/auth";
+import { PedidoPorMensagem } from "@/components/PedidoPorMensagem";
+
+type AdminTab = "perfumes" | "pedidos" | "mensagem" | "clientes" | "remessas";
 
 type PerfumeForm = Record<string, unknown> & {
   id: string; name: string; brand: string; type: string; pricePerMl: string; recavePrice: string; totalMl: string;
@@ -106,15 +109,16 @@ function AdminSidebar({
 }: {
   user: User;
   tab: string;
-  onTab: (t: "perfumes" | "pedidos" | "clientes" | "remessas") => void;
+  onTab: (t: AdminTab) => void;
   onLogout: () => void;
   counts: { pedidos: number; clientes: number; remessas: number };
 }) {
   const initials = user.email ? user.email[0].toUpperCase() : "A";
 
-  const navItems: { key: "perfumes" | "pedidos" | "clientes" | "remessas"; icon: React.ReactNode; label: string; badge?: number }[] = [
+  const navItems: { key: AdminTab; icon: React.ReactNode; label: string; badge?: number }[] = [
     { key: "perfumes", icon: <Package size={15} />, label: "Perfumes" },
     { key: "pedidos", icon: <ArrowUpRight size={15} />, label: "Pedidos", badge: counts.pedidos },
+    { key: "mensagem", icon: <MessageCircle size={15} />, label: "Pedido por mensagem" },
     { key: "clientes", icon: <Users size={15} />, label: "Clientes", badge: counts.clientes },
     { key: "remessas", icon: <Archive size={15} />, label: "Remessas", badge: counts.remessas },
   ];
@@ -572,7 +576,7 @@ export default function AdminPage() {
   const [ordersReady, setOrdersReady] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [remessas, setRemessas] = useState<Remessa[]>([]);
-  const [tab, setTab] = useState<"perfumes" | "pedidos" | "clientes" | "remessas">("perfumes");
+  const [tab, setTab] = useState<AdminTab>("perfumes");
   const [query, setQuery] = useState("");
   const [perfumeFilter, setPerfumeFilter] = useState<"todos" | "publicados" | "ocultos">("todos");
   const [editing, setEditing] = useState<PerfumeForm | null>(null);
@@ -609,6 +613,7 @@ export default function AdminPage() {
 
   const legacyOrders = useMemo(() => rawPerfumes.flatMap((raw) => { const perfumeName = text(raw.name); const brand = text(raw.brand); const perfumeId = text(raw.id) || perfumeName; return (Array.isArray(raw.orders) ? raw.orders : []).map((order) => { const item = order as Record<string, unknown>; return { id: `legacy-${perfumeId}-${text(item.id)}`, perfumeId, perfumeName, brand, volumeMl: Number(item.ml) || 0, quantity: 1, unitPrice: 0, customerName: text(item.name), contact: "", payment: text(item.pagamento), status: "novo" as const, createdAt: "", source: "catalogo" as const, isApc: Boolean(item.isApc), legacy: true }; }); }), [rawPerfumes]);
   const messageOrders = useMemo(() => { if (!messagePerfume) return []; const perfumeId = text(messagePerfume.id) || text(messagePerfume.name); const perfumeName = text(messagePerfume.name); return [...orders.filter((o) => o.perfumeId === perfumeId || o.perfumeName === perfumeName), ...legacyOrders.filter((o) => o.perfumeId === perfumeId || o.perfumeName === perfumeName)]; }, [messagePerfume, orders, legacyOrders]);
+  const ordersFor = (raw: Record<string, unknown>) => { const perfumeId = text(raw.id) || text(raw.name); const perfumeName = text(raw.name); return [...orders.filter((o) => o.perfumeId === perfumeId || o.perfumeName === perfumeName), ...legacyOrders.filter((o) => o.perfumeId === perfumeId || o.perfumeName === perfumeName)]; };
   const whatsappMessage = useMemo(() => (messagePerfume ? buildWhatsappMessage(messagePerfume, messageOrders) : ""), [messagePerfume, messageOrders]);
 
   useEffect(() => { if (!authorized || !ordersReady) return; const reservations = new Map<string, { perfumeId: string; reserved: boolean; orderId: string; volumeMl: number }>(); [...orders, ...legacyOrders].filter((o) => o.isApc && o.status !== "cancelado").forEach((o) => reservations.set(o.perfumeId, { perfumeId: o.perfumeId, reserved: true, orderId: o.id || `apc-${o.perfumeId}`, volumeMl: o.volumeMl })); void syncApcStatus(Array.from(reservations.values())).catch(() => setOrdersError("Não foi possível atualizar APC.")); }, [authorized, ordersReady, orders, legacyOrders]);
@@ -679,6 +684,7 @@ export default function AdminPage() {
   const tabTitle: Record<string, string> = {
     perfumes: "Perfumes",
     pedidos: "Pedidos",
+    mensagem: "Pedido por mensagem",
     clientes: "Clientes",
     remessas: "Remessas",
   };
@@ -759,6 +765,7 @@ export default function AdminPage() {
           <div className="admin-tabs">
             <button className={tab === "perfumes" ? "active" : ""} onClick={() => { setTab("perfumes"); setQuery(""); }}><Package size={14} /> Perfumes</button>
             <button className={tab === "pedidos" ? "active" : ""} onClick={() => { setTab("pedidos"); setQuery(""); }}><ArrowUpRight size={14} /> Pedidos <span>{orders.length + legacyOrders.length}</span></button>
+            <button className={tab === "mensagem" ? "active" : ""} onClick={() => { setTab("mensagem"); setQuery(""); }}><MessageCircle size={14} /> Pedido por mensagem</button>
             <button className={tab === "clientes" ? "active" : ""} onClick={() => { setTab("clientes"); setQuery(""); }}><Users size={14} /> Clientes <span>{clientes.length}</span></button>
             <button className={tab === "remessas" ? "active" : ""} onClick={() => { setTab("remessas"); setQuery(""); }}><Archive size={14} /> Remessas <span>{remessas.length}</span></button>
           </div>
@@ -866,6 +873,11 @@ export default function AdminPage() {
                 })}
               </div>
             </section>
+          )}
+
+          {/* ── Aba: Pedido por mensagem */}
+          {!editing && tab === "mensagem" && (
+            <PedidoPorMensagem rawPerfumes={rawPerfumes} clientes={clientes} ordersFor={ordersFor} onNotice={setNotice} />
           )}
 
           {/* ── Aba: Clientes */}

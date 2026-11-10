@@ -175,6 +175,58 @@ export type WhatsappMessageOrder = {
   createdAt?: unknown;
 };
 
+// Pedidos que contam na mensagem e no saldo: ignora cancelados e pedidos repetidos (mesmo id ou legacyRef).
+function activeMessageOrders(raw: Record<string, unknown>, orders: WhatsappMessageOrder[] = []) {
+  const rawOrders = Array.isArray(raw.orders) ? raw.orders.map((order) => {
+    const item = order as Record<string, unknown>;
+    return {
+      id: `legacy-${String(item.id || "")}`,
+      customerName: item.name,
+      volumeMl: item.ml,
+      quantity: 1,
+      isApc: item.isApc,
+      status: item.entregue ? "entregue" : "novo",
+    } satisfies WhatsappMessageOrder;
+  }) : [];
+  const sourceOrders = orders.length ? orders : rawOrders;
+  const seenOrderIds = new Set<string>();
+  return sourceOrders.filter((order) => {
+    if (String(order.status || "novo") === "cancelado") return false;
+    const orderId = String(order.legacyRef || order.id || "");
+    if (!orderId) return true;
+    if (seenOrderIds.has(orderId)) return false;
+    seenOrderIds.add(orderId);
+    return true;
+  });
+}
+
+// Quantos ml ainda estão disponíveis para venda, com a mesma regra usada na mensagem do WhatsApp.
+export function remainingMlFor(raw: Record<string, unknown>, orders: WhatsappMessageOrder[] = []) {
+  const totalMl = numberValue(raw.totalMl);
+  const reservedMl = activeMessageOrders(raw, orders).reduce((sum, order) => sum + numberValue(order.volumeMl ?? order.ml) * Math.max(1, numberValue(order.quantity) || 1), 0);
+  return totalMl > 0 ? Math.max(0, totalMl - reservedMl) : 0;
+}
+
+// Preço de um item pedido, igual ao mostrado na mensagem: valor manual da ficha ou ml × preço por ml.
+// No APC, soma o frasco (padrão R$ 10, ou o valor definido na ficha).
+export function unitPriceFor(raw: Record<string, unknown>, ml: number, isApc = false) {
+  const pricePerMl = numberValue(raw.pricePerMl);
+  if (isApc) return pricePerMl > 0 ? ml * pricePerMl + numberOrDefault(raw.apcFrasco, 10) : 0;
+  const rawPrices = (raw.prices && typeof raw.prices === "object" ? raw.prices : {}) as Record<string, unknown>;
+  const manual = numberValue(rawPrices[String(ml)]);
+  return manual > 0 ? manual : pricePerMl > 0 ? ml * pricePerMl : 0;
+}
+
+// Dados do APC de um perfume (ml do APC e se está habilitado).
+export function apcInfoFor(raw: Record<string, unknown>) {
+  return { hasApc: raw.hasApc === true, apcMl: numberValue(raw.apcMl) || 40 };
+}
+
+// Volumes que o perfume oferece (os personalizados da ficha ou o padrão do catálogo).
+export function volumesFor(raw: Record<string, unknown>) {
+  return customVolumes(raw).length ? customVolumes(raw) : catalogVolumes;
+}
+
 // Gera a mensagem pronta de WhatsApp para um perfume, a partir dos mesmos dados usados na ficha do admin.
 export function buildWhatsappMessage(raw: Record<string, unknown>, orders: WhatsappMessageOrder[] = []) {
   const name = rawText(raw.name) || "Perfume sem nome";
@@ -216,29 +268,8 @@ export function buildWhatsappMessage(raw: Record<string, unknown>, orders: Whats
   });
   if (hasApc && apcPrice > 0) lines.push(`  · APC + ${apcMl} ml: ${formatPrice(apcPrice)}`);
 
-  const rawOrders = Array.isArray(raw.orders) ? raw.orders.map((order) => {
-    const item = order as Record<string, unknown>;
-    return {
-      id: `legacy-${String(item.id || "")}`,
-      customerName: item.name,
-      volumeMl: item.ml,
-      quantity: 1,
-      isApc: item.isApc,
-      status: item.entregue ? "entregue" : "novo",
-    } satisfies WhatsappMessageOrder;
-  }) : [];
-  const sourceOrders = orders.length ? orders : rawOrders;
-  const seenOrderIds = new Set<string>();
-  const activeOrders = sourceOrders.filter((order) => {
-    if (String(order.status || "novo") === "cancelado") return false;
-    const orderId = String(order.legacyRef || order.id || "");
-    if (!orderId) return true;
-    if (seenOrderIds.has(orderId)) return false;
-    seenOrderIds.add(orderId);
-    return true;
-  });
-  const reservedMl = activeOrders.reduce((sum, order) => sum + numberValue(order.volumeMl ?? order.ml) * Math.max(1, numberValue(order.quantity) || 1), 0);
-  const remainingMl = totalMl > 0 ? Math.max(0, totalMl - reservedMl) : 0;
+  const activeOrders = activeMessageOrders(raw, orders);
+  const remainingMl = remainingMlFor(raw, orders);
 
   if (activeOrders.length) {
     lines.push("");
