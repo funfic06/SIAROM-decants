@@ -579,6 +579,9 @@ export default function AdminPage() {
   const [deleteClienteTarget, setDeleteClienteTarget] = useState<Cliente | null>(null);
   const [deleteRemessaTarget, setDeleteRemessaTarget] = useState<{ id: string; customerName: string; status: RemessaStatus } | null>(null);
   const [notice, setNotice] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState<null | "cancel" | "delete">(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [messagePerfume, setMessagePerfume] = useState<Record<string, unknown> | null>(null);
 
   const copyWhatsappMessage = async () => { try { await navigator.clipboard.writeText(whatsappMessage); setNotice("Mensagem copiada."); } catch { setNotice("Não foi possível copiar. Selecione e copie manualmente."); } };
@@ -618,6 +621,45 @@ export default function AdminPage() {
     return !q || `${text(raw.name)} ${text(raw.brand)} ${normalizeGender(raw.gender || raw.type || raw.family)}`.toLowerCase().includes(q);
   }), [rawPerfumes, query, perfumeFilter]);
   const visibleOrders = useMemo(() => [...orders.map((o) => ({ ...o, legacy: false })), ...legacyOrders].filter((o) => !query || `${o.customerName} ${o.perfumeName} ${o.contact}`.toLowerCase().includes(query.toLowerCase())), [orders, legacyOrders, query]);
+  const selectableVisible = visibleOrders.filter((o) => o.id && !o.legacy);
+  const selectedOrders = useMemo(() => orders.filter((o) => o.id && selectedIds.has(o.id)), [orders, selectedIds]);
+  const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every((o) => selectedIds.has(o.id!));
+  const remessaEligible = selectedOrders.filter((o) => o.status !== "cancelado" && !remessaOrderIds.has(o.id!));
+  const cancelEligible = selectedOrders.filter((o) => o.status !== "cancelado");
+  const deleteEligible = selectedOrders.filter((o) => !remessaOrderIds.has(o.id!));
+  const clearSelection = () => setSelectedIds(new Set());
+  const toggleSelected = (id: string) => setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAllVisible = () => setSelectedIds((prev) => { const next = new Set(prev); selectableVisible.forEach((o) => { if (allVisibleSelected) next.delete(o.id!); else next.add(o.id!); }); return next; });
+  useEffect(() => { if (tab !== "pedidos") setSelectedIds(new Set()); }, [tab]);
+  useEffect(() => { setSelectedIds((prev) => { const ids = new Set(orders.map((o) => o.id)); const next = new Set(Array.from(prev).filter((id) => ids.has(id))); return next.size === prev.size ? prev : next; }); }, [orders]);
+  const bulkCreateRemessas = async () => {
+    if (remessaEligible.length === 0) return;
+    setBulkBusy(true); setOrdersError("");
+    try {
+      const byCustomer = new Map<string, typeof remessaEligible>();
+      remessaEligible.forEach((o) => { const name = o.customerName || "Sem nome"; if (!byCustomer.has(name)) byCustomer.set(name, []); byCustomer.get(name)!.push(o); });
+      for (const [name, list] of Array.from(byCustomer.entries())) {
+        await createRemessa(list.map((o) => o.id!), name, list.map((o) => ({ orderId: o.id!, perfumeName: o.perfumeName, volumeMl: o.volumeMl, isApc: Boolean(o.isApc) })));
+      }
+      setNotice(`${byCustomer.size} remessa(s) criada(s) com ${remessaEligible.length} pedido(s).`);
+      clearSelection(); setTab("remessas");
+    } catch { setOrdersError("Não foi possível criar as remessas."); } finally { setBulkBusy(false); }
+  };
+  const bulkCancel = async () => {
+    setBulkBusy(true); setOrdersError("");
+    try {
+      for (const o of cancelEligible) await cancelCustomerOrder(o.id!);
+      setNotice(`${cancelEligible.length} pedido(s) cancelado(s).`); clearSelection();
+    } catch { setOrdersError("Não foi possível cancelar todos os pedidos."); } finally { setBulkBusy(false); setBulkAction(null); }
+  };
+  const bulkDelete = async () => {
+    setBulkBusy(true); setOrdersError("");
+    try {
+      await deleteCustomerOrders(deleteEligible.map((o) => o.id!));
+      const skipped = selectedOrders.length - deleteEligible.length;
+      setNotice(`${deleteEligible.length} pedido(s) excluído(s).${skipped > 0 ? ` ${skipped} em remessa foram mantidos.` : ""}`); clearSelection();
+    } catch { setOrdersError("Não foi possível excluir todos os pedidos."); } finally { setBulkBusy(false); setBulkAction(null); }
+  };
   const activeOrdersCount = orders.filter((o) => o.status !== "cancelado").length;
   const removableOrderCount = orders.filter((o) => o.status === "cancelado").length;
 
@@ -828,8 +870,18 @@ export default function AdminPage() {
                 </div>
               )}
               <label className="admin-search" style={{ marginBottom: "1rem" }}><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar cliente ou perfume" /></label>
+              {selectedIds.size > 0 && (
+                <div className="admin-bulk-bar">
+                  <strong>{selectedIds.size} selecionado(s)</strong>
+                  <button className="admin-secondary-button" onClick={clearSelection} disabled={bulkBusy}>Limpar seleção</button>
+                  <span className="admin-bulk-spacer" />
+                  <button className="admin-primary-button" onClick={() => void bulkCreateRemessas()} disabled={bulkBusy || remessaEligible.length === 0}><Archive size={14} /> Criar remessa ({remessaEligible.length})</button>
+                  <button className="admin-secondary-button" onClick={() => setBulkAction("cancel")} disabled={bulkBusy || cancelEligible.length === 0}><X size={14} /> Cancelar ({cancelEligible.length})</button>
+                  <button className="admin-primary-button admin-danger-button" onClick={() => setBulkAction("delete")} disabled={bulkBusy || deleteEligible.length === 0}><Trash2 size={14} /> Excluir ({deleteEligible.length})</button>
+                </div>
+              )}
               <div className="admin-orders-table">
-                <div className="admin-order-head"><span>Cliente</span><span>Fragrância</span><span>Volume</span><span>Remessa</span></div>
+                <div className="admin-order-head"><input type="checkbox" className="admin-checkbox" aria-label="Selecionar todos" checked={allVisibleSelected} onChange={toggleAllVisible} disabled={selectableVisible.length === 0} /><span>Cliente</span><span>Fragrância</span><span>Volume</span><span>Remessa</span></div>
                 {visibleOrders.length === 0 ? (
                   <div className="admin-empty" style={{ borderRadius: 0, border: "none", borderTop: "1px solid var(--border)" }}>Nenhum pedido encontrado.</div>
                 ) : visibleOrders.map((order) => {
@@ -837,7 +889,8 @@ export default function AdminPage() {
                   const remessa = order.remessaId ? remessaById.get(order.remessaId) : undefined;
                   const isCanceled = order.status === "cancelado";
                   return (
-                    <div className="admin-order-row" key={order.id} style={{ opacity: isCanceled ? 0.55 : 1 }}>
+                    <div className={`admin-order-row${order.id && selectedIds.has(order.id) ? " is-selected" : ""}`} key={order.id} style={{ opacity: isCanceled ? 0.55 : 1 }}>
+                      <input type="checkbox" className="admin-checkbox" aria-label={`Selecionar pedido de ${order.customerName}`} checked={Boolean(order.id && selectedIds.has(order.id))} disabled={order.legacy || !order.id} onChange={() => order.id && toggleSelected(order.id)} />
                       <div><strong>{order.customerName}</strong><small>{order.contact || (order.legacy ? "Pedido legado" : "")}</small></div>
                       <div>
                         <strong>{order.perfumeName}</strong>
@@ -893,6 +946,18 @@ export default function AdminPage() {
         </div>
       )}
 
+      {bulkAction && (
+        <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && !bulkBusy && setBulkAction(null)}>
+          <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-title">
+            <div className="admin-eyebrow"><span /> confirmação</div>
+            <h2 id="bulk-title">{bulkAction === "cancel" ? "Cancelar pedidos selecionados?" : "Excluir pedidos selecionados?"}</h2>
+            {bulkAction === "cancel"
+              ? <p><strong>{cancelEligible.length}</strong> pedido(s) serão cancelados e o estoque reservado será devolvido.</p>
+              : <p><strong>{deleteEligible.length}</strong> pedido(s) serão excluídos permanentemente.{selectedOrders.length > deleteEligible.length ? ` ${selectedOrders.length - deleteEligible.length} em remessa serão mantidos.` : ""}</p>}
+            <div className="admin-confirm-actions"><button className="admin-secondary-button" onClick={() => setBulkAction(null)} disabled={bulkBusy}>Voltar</button><button className="admin-primary-button admin-danger-button" onClick={() => void (bulkAction === "cancel" ? bulkCancel() : bulkDelete())} disabled={bulkBusy}>{bulkBusy ? "Processando…" : "Confirmar"}</button></div>
+          </div>
+        </div>
+      )}
       {deleteRemessaTarget && (
         <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setDeleteRemessaTarget(null)}>
           <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="del-remessa-title">

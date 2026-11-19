@@ -1099,7 +1099,7 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
 }
 .admin-order-head {
   display: grid;
-  grid-template-columns: 1.5fr 1.5fr 0.8fr 1fr;
+  grid-template-columns: 28px 1.5fr 1.5fr 0.8fr 1fr;
   gap: 12px;
   padding: 9px 16px;
   background: var(--adm-surface-raised);
@@ -1113,7 +1113,7 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
 }
 .admin-order-row {
   display: grid;
-  grid-template-columns: 1.5fr 1.5fr 0.8fr 1fr;
+  grid-template-columns: 28px 1.5fr 1.5fr 0.8fr 1fr;
   gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--adm-border);
@@ -1590,7 +1590,8 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
   .admin-topbar { padding: 0 16px; }
   .admin-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
   .admin-order-head { display: none; }
-  .admin-order-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .admin-order-row { grid-template-columns: 28px 1fr 1fr; gap: 8px; }
+  .admin-bulk-bar > button { flex: 1 1 100%; }
   .admin-tabs { overflow-x: auto; width: 100%; }
   .admin-accord-grid { grid-template-columns: 1fr 1fr; }
   .admin-price-grid { grid-template-columns: repeat(2, 1fr); }
@@ -1609,3 +1610,9 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
   .admin-login-card { padding: 28px 22px; }
   .admin-login-card h1 { font-size: 1.5rem; }
 }
+
+.admin-checkbox { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--adm-accent); cursor: pointer; }
+.admin-checkbox:disabled { cursor: not-allowed; opacity: .35; }
+.admin-order-row.is-selected { background: var(--adm-accent-soft); }
+.admin-bulk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 14px; background: var(--adm-accent-soft); border: 1px solid rgba(91,63,219,.2); border-radius: var(--adm-radius-md); font-size: .82rem; color: var(--adm-text); }
+.admin-bulk-spacer { flex: 1; }
