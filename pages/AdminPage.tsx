@@ -567,6 +567,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<"perfumes" | "pedidos" | "clientes" | "remessas">("perfumes");
   const [query, setQuery] = useState("");
   const [perfumeFilter, setPerfumeFilter] = useState<"todos" | "publicados" | "ocultos">("todos");
+  const [expandedPerfumeId, setExpandedPerfumeId] = useState<string | null>(null);
   const [editing, setEditing] = useState<PerfumeForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -769,34 +770,39 @@ export default function AdminPage() {
                 <button className={perfumeFilter === "publicados" ? "active" : ""} onClick={() => setPerfumeFilter("publicados")}><Eye size={14} /> Disponíveis <span>{perfumeCounts.publicados}</span></button>
                 <button className={perfumeFilter === "ocultos" ? "active" : ""} onClick={() => setPerfumeFilter("ocultos")}><EyeOff size={14} /> Ocultos <span>{perfumeCounts.ocultos}</span></button>
               </div>
-              <div className="admin-perfume-list">
+              <div className="admin-perfume-grid">
                 {visiblePerfumes.length === 0 ? (
                   <div className="admin-empty">{perfumeFilter === "ocultos" && !query ? "Nenhum perfume oculto." : perfumeFilter === "publicados" && !query ? "Nenhum perfume disponível." : "Nenhum perfume encontrado."}</div>
                 ) : visiblePerfumes.map((raw) => {
                   const perfumeId = text(raw.id) || text(raw.name);
                   const totalOrders = orderTotals.get(perfumeId) || 0;
+                  const isOpen = expandedPerfumeId === perfumeId;
+                  const isHidden = raw.available === false;
                   return (
-                    <article className="admin-perfume-row" key={perfumeId}>
-                      <div className="admin-perfume-image">
-                        {text(raw.imageUrl) ? <img src={text(raw.imageUrl)} alt="" /> : <img src={logoMark} alt="" />}
-                      </div>
-                      <div className="admin-perfume-info">
-                        <div className="admin-row-top">
-                          <div><h3>{text(raw.name) || "Sem nome"}</h3><p>{text(raw.brand)}{text(raw.type) ? ` · ${normalizeGender(raw.gender || raw.type || raw.family)}` : ""}</p></div>
-                          <span className={`admin-availability ${raw.available === false ? "offline" : "online"}`}>{raw.available === false ? "Oculto" : "Publicado"}</span>
+                    <article key={perfumeId} className={`admin-perfume-tile${isOpen ? " is-open" : ""}${isHidden ? " is-hidden" : ""}`}>
+                      <button type="button" className="admin-tile-photo" onClick={() => setExpandedPerfumeId(isOpen ? null : perfumeId)} aria-expanded={isOpen} aria-label={`${isOpen ? "Recolher" : "Abrir"} ${text(raw.name) || "perfume"}`} title={text(raw.name)}>
+                        <img src={text(raw.imageUrl) || logoMark} alt="" loading="lazy" />
+                        {isHidden && <span className="admin-tile-flag">Oculto</span>}
+                      </button>
+                      {isOpen && (
+                        <div className="admin-tile-details">
+                          <div className="admin-row-top">
+                            <div><h3>{text(raw.name) || "Sem nome"}</h3><p>{text(raw.brand)}{text(raw.type) ? ` · ${normalizeGender(raw.gender || raw.type || raw.family)}` : ""}</p></div>
+                            <span className={`admin-availability ${isHidden ? "offline" : "online"}`}>{isHidden ? "Oculto" : "Publicado"}</span>
+                          </div>
+                          <div className="admin-row-meta">
+                            <span>R$ {text(raw.pricePerMl) || "—"}/ml</span>
+                            <span>{totalOrders} pedido(s)</span>
+                            <span>{isHidden ? "Não aparece" : "Visível no catálogo"}</span>
+                          </div>
+                          <div className="admin-row-actions">
+                            <button onClick={() => setEditing(formFromRaw(raw))}><Edit3 size={13} /> Editar</button>
+                            <button onClick={() => setMessagePerfume(raw)}><MessageCircle size={13} /> Mensagem</button>
+                            <button onClick={() => void toggleAvailability(raw)}>{isHidden ? <><Eye size={13} /> Publicar</> : <><EyeOff size={13} /> Ocultar</>}</button>
+                            <button className="danger" onClick={() => void removePerfume(perfumeId)}><Trash2 size={13} /> Remover</button>
+                          </div>
                         </div>
-                        <div className="admin-row-meta">
-                          <span>R$ {text(raw.pricePerMl) || "—"}/ml</span>
-                          <span>{totalOrders} pedido(s)</span>
-                          <span>{raw.available === false ? "Não aparece" : "Visível no catálogo"}</span>
-                        </div>
-                        <div className="admin-row-actions">
-                          <button onClick={() => setEditing(formFromRaw(raw))}><Edit3 size={13} /> Editar</button>
-                          <button onClick={() => setMessagePerfume(raw)}><MessageCircle size={13} /> Mensagem</button>
-                          <button onClick={() => void toggleAvailability(raw)}>{raw.available === false ? <><Eye size={13} /> Publicar</> : <><EyeOff size={13} /> Ocultar</>}</button>
-                          <button className="danger" onClick={() => void removePerfume(perfumeId)}><Trash2 size={13} /> Remover</button>
-                        </div>
-                      </div>
+                      )}
                     </article>
                   );
                 })}
