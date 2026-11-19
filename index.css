@@ -138,8 +138,6 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
 .footer-brand { display: flex; align-items: baseline; gap: 11px; color: var(--ivory); }
 .footer-brand span { font-family: "Cormorant Garamond", serif; font-size: 20px; letter-spacing: .16em; }
 .footer-brand small { color: var(--gold); font-size: 7px; letter-spacing: .12em; text-transform: uppercase; }
-.footer-admin-link { color: rgba(242,238,229,.36); font-size: 8px; letter-spacing: .11em; text-transform: uppercase; transition: color .18s ease; }
-.footer-admin-link:hover, .footer-admin-link:focus-visible { color: var(--gold-light); }
 .footer-copyright { color: var(--gold); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
 
 .detail-header { position: relative; }

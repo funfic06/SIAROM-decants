@@ -11,14 +11,9 @@ export const PRIVATE_MODE = true;
 
 function authErrorMessage(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
-  const messages: Record<string, string> = {
-    "auth/invalid-credential": "E-mail ou senha incorretos.",
-    "auth/user-not-found": "Este e-mail ainda não foi criado em Authentication → Users no projeto Firebase.",
-    "auth/wrong-password": "A senha não confere com a senha cadastrada para este usuário.",
-    "auth/too-many-requests": "Muitas tentativas foram feitas. Aguarde alguns minutos e tente novamente.",
-    "auth/network-request-failed": "A conexão com o Firebase falhou. Verifique a internet e tente novamente.",
-  };
-  return messages[code] || `Não foi possível entrar${code ? ` (${code})` : ""}.`;
+  if (code === "auth/too-many-requests") return "Muitas tentativas. Aguarde e tente novamente.";
+  if (code === "auth/network-request-failed") return "Falha de conexão.";
+  return "Não foi possível entrar.";
 }
 
 export default function PrivateGate({ children }: { children: React.ReactNode }) {
@@ -58,7 +53,7 @@ export default function PrivateGate({ children }: { children: React.ReactNode })
         <div className="admin-seal"><img src={logoMark} alt="" /></div>
         <div className="admin-eyebrow"><span /> pré-lançamento</div>
         <h1>Em breve<br /><em>ao público.</em></h1>
-        <p>{user ? "Este login existe, mas ainda não está autorizado a visualizar o site." : "O site está em preparação. Entre com o login autorizado para visualizar."}</p>
+        <p>{user ? "Acesso não autorizado." : "O site está em preparação. Entre com o login autorizado para visualizar."}</p>
         {!user && <form onSubmit={submit}>
           <label><span>E-mail</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="seu@email.com" /></label>
           <label><span>Senha</span><input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" /></label>

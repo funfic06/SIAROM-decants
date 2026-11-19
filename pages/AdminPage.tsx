@@ -1,6 +1,6 @@
 // Atelier Noir — sala de controle SIAROM: redesign 2025 com sidebar escura e cards modernos.
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive, AlertCircle, Users, UserPlus } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Edit3, Eye, EyeOff, LogOut, MessageCircle, Package, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, Archive, AlertCircle, Users, UserPlus } from "lucide-react";
 import { Link } from "wouter";
 import { useCatalog } from "@/contexts/CatalogContext";
 import { useClientes } from "@/contexts/ClientesContext";
@@ -61,16 +61,9 @@ function formFromRaw(raw: Record<string, unknown>): PerfumeForm {
 }
 function authErrorMessage(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
-  const messages: Record<string, string> = {
-    "auth/invalid-credential": "E-mail ou senha incorretos.",
-    "auth/user-not-found": "Este e-mail ainda não foi criado em Authentication → Users.",
-    "auth/wrong-password": "A senha não confere.",
-    "auth/operation-not-allowed": "O provedor Email/Password está desativado.",
-    "auth/too-many-requests": "Muitas tentativas. Aguarde e tente novamente.",
-    "auth/network-request-failed": "Falha de conexão com o Firebase.",
-    "auth/invalid-api-key": "Chave do Firebase não aceita.",
-  };
-  return messages[code] || `Não foi possível entrar${code ? ` (${code})` : ""}.`;
+  if (code === "auth/too-many-requests") return "Muitas tentativas. Aguarde e tente novamente.";
+  if (code === "auth/network-request-failed") return "Falha de conexão.";
+  return "Não foi possível entrar.";
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
@@ -86,11 +79,10 @@ function AdminLogin({ onSignedIn }: { onSignedIn: (user: User) => void }) {
         <p>Entre para administrar fragrâncias, disponibilidade e pedidos da curadoria.</p>
         <form onSubmit={submit}>
           <label><span>E-mail administrativo</span><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" /></label>
-          <label><span>Senha criada no Firebase</span><input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Sua senha" /></label>
+          <label><span>Senha</span><input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Sua senha" /></label>
           {error && <div className="admin-error">{error}</div>}
           <button className="admin-primary-button" disabled={busy}>{busy ? "Verificando…" : "Entrar no arquivo"}<ArrowUpRight size={16} /></button>
         </form>
-        <Link href="/" className="admin-back-link"><ArrowLeft size={14} /> Voltar ao catálogo</Link>
       </div>
     </div>
   );
@@ -690,12 +682,10 @@ export default function AdminPage() {
     <div className="admin-login">
       <div className="admin-login-card">
         <div className="admin-seal"><img src={logoMark} alt="" /></div>
-        <div className="admin-eyebrow"><span /> acesso pendente</div>
-        <h1>Quase lá.</h1>
-        <p>{authMessage || "Usuário não autorizado."}</p>
-        <div className="admin-security-note"><ShieldCheck size={18} /><span>Crie um documento em <strong>admins/{user.uid}</strong> com <strong>role: "admin"</strong>.</span></div>
+        <div className="admin-eyebrow"><span /> acesso negado</div>
+        <h1>Acesso<br /><em>negado.</em></h1>
+        <p>Acesso não autorizado.</p>
         <button className="admin-secondary-button full" onClick={() => void signOutAdmin()}>Sair</button>
-        <Link href="/" className="admin-back-link"><ArrowLeft size={14} /> Voltar ao catálogo</Link>
       </div>
     </div>
   );

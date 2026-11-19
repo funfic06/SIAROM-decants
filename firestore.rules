@@ -81,6 +81,14 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    match /remessas/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /clientes/{id} {
+      allow read, write: if isAdmin();
+    }
+
     match /admins/{userId} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == userId);
       allow write: if false;
