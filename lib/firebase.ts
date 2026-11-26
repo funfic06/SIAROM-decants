@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { initializeAuth, inMemoryPersistence, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
+import { initializeAuth, browserSessionPersistence, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch, type Unsubscribe } from "firebase/firestore";
 
 export const FIREBASE_CONFIG = {
@@ -14,7 +14,7 @@ export const FIREBASE_CONFIG = {
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
 // Sessão apenas em memória: nada é salvo em cookies/localStorage/IndexedDB.
 // Ao recarregar ou fechar a página, o login é exigido novamente.
-export const firebaseAuth = initializeAuth(firebaseApp, { persistence: inMemoryPersistence });
+export const firebaseAuth = initializeAuth(firebaseApp, { persistence: browserSessionPersistence });
 export const firestore = getFirestore(firebaseApp);
 export const catalogRef = doc(firestore, "dados", "principal");
 export const ordersRef = collection(firestore, "pedidos");
