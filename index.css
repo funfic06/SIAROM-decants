@@ -1616,3 +1616,8 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
 .admin-order-row.is-selected { background: var(--adm-accent-soft); }
 .admin-bulk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 14px; background: var(--adm-accent-soft); border: 1px solid rgba(91,63,219,.2); border-radius: var(--adm-radius-md); font-size: .82rem; color: var(--adm-text); }
 .admin-bulk-spacer { flex: 1; }
+.admin-select-all { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: .82rem; color: var(--adm-text-2); cursor: pointer; }
+.admin-select-all .admin-checkbox { margin: 0; }
+.admin-perfume-tile { position: relative; }
+.admin-tile-check { position: absolute; top: 8px; left: 8px; z-index: 2; margin: 0; width: 18px; height: 18px; }
+.admin-perfume-tile.is-selected { border-color: var(--adm-accent); box-shadow: 0 0 0 2px var(--adm-accent-soft); }

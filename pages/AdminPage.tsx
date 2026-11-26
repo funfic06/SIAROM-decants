@@ -582,6 +582,9 @@ export default function AdminPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<null | "cancel" | "delete">(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [selectedPerfumeIds, setSelectedPerfumeIds] = useState<Set<string>>(new Set());
+  const [perfumeBulkDelete, setPerfumeBulkDelete] = useState(false);
+  const [perfumeBulkBusy, setPerfumeBulkBusy] = useState(false);
   const [messagePerfume, setMessagePerfume] = useState<Record<string, unknown> | null>(null);
 
   const copyWhatsappMessage = async () => { try { await navigator.clipboard.writeText(whatsappMessage); setNotice("Mensagem copiada."); } catch { setNotice("Não foi possível copiar. Selecione e copie manualmente."); } };
@@ -659,6 +662,29 @@ export default function AdminPage() {
       const skipped = selectedOrders.length - deleteEligible.length;
       setNotice(`${deleteEligible.length} pedido(s) excluído(s).${skipped > 0 ? ` ${skipped} em remessa foram mantidos.` : ""}`); clearSelection();
     } catch { setOrdersError("Não foi possível excluir todos os pedidos."); } finally { setBulkBusy(false); setBulkAction(null); }
+  };
+  const perfumeKey = (raw: Record<string, unknown>) => text(raw.id) || text(raw.name);
+  const selectedPerfumes = useMemo(() => rawPerfumes.filter((raw) => selectedPerfumeIds.has(perfumeKey(raw))), [rawPerfumes, selectedPerfumeIds]);
+  const selectedToHide = selectedPerfumes.filter((raw) => raw.available !== false);
+  const selectedToPublish = selectedPerfumes.filter((raw) => raw.available === false);
+  const allPerfumesSelected = visiblePerfumes.length > 0 && visiblePerfumes.every((raw) => selectedPerfumeIds.has(perfumeKey(raw)));
+  const clearPerfumeSelection = () => setSelectedPerfumeIds(new Set());
+  const togglePerfumeSelected = (id: string) => setSelectedPerfumeIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleAllPerfumes = () => setSelectedPerfumeIds((prev) => { const next = new Set(prev); visiblePerfumes.forEach((raw) => { if (allPerfumesSelected) next.delete(perfumeKey(raw)); else next.add(perfumeKey(raw)); }); return next; });
+  useEffect(() => { if (tab !== "perfumes") setSelectedPerfumeIds(new Set()); }, [tab]);
+  useEffect(() => { setSelectedPerfumeIds((prev) => { const ids = new Set(rawPerfumes.map((raw) => perfumeKey(raw))); const next = new Set(Array.from(prev).filter((id) => ids.has(id))); return next.size === prev.size ? prev : next; }); }, [rawPerfumes]);
+  const bulkSetAvailability = async (available: boolean) => {
+    const targets = available ? selectedToPublish : selectedToHide;
+    if (targets.length === 0) return;
+    const ids = new Set(targets.map(perfumeKey));
+    setPerfumeBulkBusy(true);
+    try { await saveRawPerfumes(rawPerfumes.map((item) => ids.has(perfumeKey(item)) ? { ...item, available } : item)); setNotice(`${targets.length} perfume(s) ${available ? "publicado(s)" : "ocultado(s)"}.`); clearPerfumeSelection(); }
+    catch { setNotice("Não foi possível atualizar os perfumes."); } finally { setPerfumeBulkBusy(false); }
+  };
+  const bulkRemovePerfumes = async () => {
+    setPerfumeBulkBusy(true);
+    try { await saveRawPerfumes(rawPerfumes.filter((item) => !selectedPerfumeIds.has(perfumeKey(item)))); setNotice(`${selectedPerfumes.length} perfume(s) removido(s).`); clearPerfumeSelection(); }
+    catch { setNotice("Não foi possível remover os perfumes."); } finally { setPerfumeBulkBusy(false); setPerfumeBulkDelete(false); }
   };
   const activeOrdersCount = orders.filter((o) => o.status !== "cancelado").length;
   const removableOrderCount = orders.filter((o) => o.status === "cancelado").length;
@@ -812,6 +838,19 @@ export default function AdminPage() {
                 <button className={perfumeFilter === "publicados" ? "active" : ""} onClick={() => setPerfumeFilter("publicados")}><Eye size={14} /> Disponíveis <span>{perfumeCounts.publicados}</span></button>
                 <button className={perfumeFilter === "ocultos" ? "active" : ""} onClick={() => setPerfumeFilter("ocultos")}><EyeOff size={14} /> Ocultos <span>{perfumeCounts.ocultos}</span></button>
               </div>
+              {visiblePerfumes.length > 0 && (
+                <label className="admin-select-all"><input type="checkbox" className="admin-checkbox" checked={allPerfumesSelected} onChange={toggleAllPerfumes} /> Selecionar todos ({visiblePerfumes.length})</label>
+              )}
+              {selectedPerfumeIds.size > 0 && (
+                <div className="admin-bulk-bar">
+                  <strong>{selectedPerfumeIds.size} selecionado(s)</strong>
+                  <button className="admin-secondary-button" onClick={clearPerfumeSelection} disabled={perfumeBulkBusy}>Limpar seleção</button>
+                  <span className="admin-bulk-spacer" />
+                  {selectedToPublish.length > 0 && <button className="admin-secondary-button" onClick={() => void bulkSetAvailability(true)} disabled={perfumeBulkBusy}><Eye size={14} /> Publicar ({selectedToPublish.length})</button>}
+                  <button className="admin-secondary-button" onClick={() => void bulkSetAvailability(false)} disabled={perfumeBulkBusy || selectedToHide.length === 0}><EyeOff size={14} /> Ocultar ({selectedToHide.length})</button>
+                  <button className="admin-primary-button admin-danger-button" onClick={() => setPerfumeBulkDelete(true)} disabled={perfumeBulkBusy}><Trash2 size={14} /> Excluir ({selectedPerfumeIds.size})</button>
+                </div>
+              )}
               <div className="admin-perfume-grid">
                 {visiblePerfumes.length === 0 ? (
                   <div className="admin-empty">{perfumeFilter === "ocultos" && !query ? "Nenhum perfume oculto." : perfumeFilter === "publicados" && !query ? "Nenhum perfume disponível." : "Nenhum perfume encontrado."}</div>
@@ -821,7 +860,8 @@ export default function AdminPage() {
                   const isOpen = expandedPerfumeId === perfumeId;
                   const isHidden = raw.available === false;
                   return (
-                    <article key={perfumeId} className={`admin-perfume-tile${isOpen ? " is-open" : ""}${isHidden ? " is-hidden" : ""}`}>
+                    <article key={perfumeId} className={`admin-perfume-tile${isOpen ? " is-open" : ""}${isHidden ? " is-hidden" : ""}${selectedPerfumeIds.has(perfumeId) ? " is-selected" : ""}`}>
+                      <input type="checkbox" className="admin-checkbox admin-tile-check" aria-label={`Selecionar ${text(raw.name) || "perfume"}`} checked={selectedPerfumeIds.has(perfumeId)} onChange={() => togglePerfumeSelected(perfumeId)} />
                       <button type="button" className="admin-tile-photo" onClick={() => setExpandedPerfumeId(isOpen ? null : perfumeId)} aria-expanded={isOpen} aria-label={`${isOpen ? "Recolher" : "Abrir"} ${text(raw.name) || "perfume"}`} title={text(raw.name)}>
                         <img src={text(raw.imageUrl) || logoMark} alt="" loading="lazy" />
                         {isHidden && <span className="admin-tile-flag">Oculto</span>}
@@ -946,6 +986,16 @@ export default function AdminPage() {
         </div>
       )}
 
+      {perfumeBulkDelete && (
+        <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && !perfumeBulkBusy && setPerfumeBulkDelete(false)}>
+          <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-perfume-title">
+            <div className="admin-eyebrow"><span /> confirmação</div>
+            <h2 id="bulk-perfume-title">Excluir perfumes selecionados?</h2>
+            <p><strong>{selectedPerfumes.length}</strong> perfume(s) serão removidos do catálogo permanentemente. Para apenas esconder do site, use Ocultar.</p>
+            <div className="admin-confirm-actions"><button className="admin-secondary-button" onClick={() => setPerfumeBulkDelete(false)} disabled={perfumeBulkBusy}>Voltar</button><button className="admin-primary-button admin-danger-button" onClick={() => void bulkRemovePerfumes()} disabled={perfumeBulkBusy}>{perfumeBulkBusy ? "Processando…" : "Confirmar"}</button></div>
+          </div>
+        </div>
+      )}
       {bulkAction && (
         <div className="admin-confirm-backdrop" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && !bulkBusy && setBulkAction(null)}>
           <div className="admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-title">
