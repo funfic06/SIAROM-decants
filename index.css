@@ -1621,3 +1621,10 @@ h1 em, h2 em { color: var(--gold-light); font-style: italic; }
 .admin-perfume-tile { position: relative; }
 .admin-tile-check { position: absolute; top: 8px; left: 8px; z-index: 2; margin: 0; width: 18px; height: 18px; }
 .admin-perfume-tile.is-selected { border-color: var(--adm-accent); box-shadow: 0 0 0 2px var(--adm-accent-soft); }
+
+/* Prateleira da página principal (components/ui/skincare-product-shelf): as regras globais acima (font, a) são
+   sem camada e vencem as utilities do Tailwind; aqui devolvemos o controle às utilities só dentro dela. */
+.product-shelf { font-family: inherit; }
+.product-shelf button, .product-shelf input { font: revert-layer; }
+.product-shelf a { color: revert-layer; text-decoration: revert-layer; }
+.catalog-shelf, .catalog-shelf-wrap { min-width: 0; }
