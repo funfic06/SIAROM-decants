@@ -697,11 +697,12 @@ function ProductPage({ p, fmt, L, brand, info, renderExtra, overlayTop, onClose,
   ];
 
   return (
-    <motion.div role="dialog" aria-modal="true" aria-label={p.name} className="fixed inset-x-0 bottom-0 z-20 overflow-y-auto" style={{ top: overlayTop, ["--ov" as string]: `${overlayTop}px` }}>
-      <motion.div className="fixed inset-x-0 bottom-0 bg-[#f3f1ed]" style={{ top: overlayTop }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
-      <div className={cn("relative mx-auto grid min-h-full max-w-[1080px] grid-cols-1 items-center gap-8 px-5 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14", overlayTop ? "pt-8" : "pt-20")}>
+    <motion.div role="dialog" aria-modal="true" aria-label={p.name} className="fixed inset-x-0 bottom-0 z-20 overflow-y-auto" style={{ top: overlayTop, ["--ov" as string]: `${overlayTop}px` }}
+      onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.dismiss !== undefined) onClose(); }}>
+      <motion.div data-dismiss className="fixed inset-x-0 bottom-0 cursor-pointer bg-[#f3f1ed]/85 backdrop-blur-md" style={{ top: overlayTop }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
+      <div data-dismiss className={cn("relative mx-auto grid min-h-full max-w-[1080px] grid-cols-1 items-center gap-8 px-5 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14", overlayTop ? "pt-8" : "pt-20")}>
         {/* the product, moved over from the shelf, standing on a white surface */}
-        <div className="relative flex flex-col items-center justify-center md:h-[calc(100dvh-7rem-var(--ov,0px))]">
+        <div data-dismiss className="relative flex flex-col items-center justify-center md:h-[calc(100dvh-7rem-var(--ov,0px))]">
           <motion.div
             layoutId={`product-${p.id}`}
             transition={SPRING}
@@ -739,7 +740,7 @@ function ProductPage({ p, fmt, L, brand, info, renderExtra, overlayTop, onClose,
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 24 }}
           transition={{ ...SPRING, delay: 0.05 }}
-          className="relative z-20"
+          className="relative z-20 cursor-auto"
         >
           <button
             ref={closeRef}
