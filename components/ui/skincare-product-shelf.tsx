@@ -18,7 +18,7 @@
  */
 "use client";
 
-import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useReducedMotion, useTransform, type MotionValue } from "motion/react";
 import { ChevronDown, ChevronLeft, Minus, Plus, ShoppingBag, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -507,23 +507,31 @@ export type ProductShelfProps = {
   info?: { label: string; value: string }[];
   /** Conteúdo extra na página do produto, abaixo das seções. */
   renderExtra?: (product: Product) => ReactNode;
-  /** Quantos produtos por prateleira (padrão: 2, 3 ou 4 conforme a largura da tela). */
+  /** Quantos produtos por prateleira (padrão: 2 a 5, conforme a largura da própria prateleira). */
   perRow?: number;
+  /** Ocupa toda a largura disponível, sem a margem lateral de 1080px. */
+  wide?: boolean;
   className?: string;
   children?: ReactNode;
 };
 
 const priceAt = (p: Product, i: number) => p.sizePrices?.[i] ?? p.price * (i > 0 ? 1.7 : 1);
 
-function useColumns(fixed?: number) {
+// Colunas conforme a largura da própria prateleira (e não da janela), para encaixar em qualquer layout.
+function useColumns(fixed: number | undefined, ref: RefObject<HTMLElement | null>) {
   const [cols, setCols] = useState(4);
-  useEffect(() => {
-    if (fixed) return;
-    const calc = () => setCols(window.innerWidth < 640 ? 2 : window.innerWidth < 1100 ? 3 : 4);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (fixed || !el) return;
+    const calc = () => {
+      const w = el.getBoundingClientRect().width;
+      setCols(w < 500 ? 2 : w < 820 ? 3 : w < 1180 ? 4 : 5);
+    };
     calc();
-    window.addEventListener("resize", calc);
-    return () => window.removeEventListener("resize", calc);
-  }, [fixed]);
+    const observer = new ResizeObserver(calc);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fixed, ref]);
   return fixed ?? cols;
 }
 
@@ -532,11 +540,12 @@ const INK = "#111111";
 
 export function ProductShelf({
   products = DEFAULT_PRODUCTS, currency = "$", formatPrice, brand = "SKASMAN", labels: labelOverrides, onAddToBag, showChrome = true,
-  overlayTop = 0, info, renderExtra, perRow, className, children,
+  overlayTop = 0, info, renderExtra, perRow, wide = false, className, children,
 }: ProductShelfProps) {
   const L = { ...DEFAULT_LABELS, ...labelOverrides };
   const fmt = (v: number) => (formatPrice ? formatPrice(v) : `${currency}${v}`);
-  const cols = useColumns(perRow);
+  const rootRef = useRef(null as HTMLDivElement | null);
+  const cols = useColumns(perRow, rootRef);
   const [openId, setOpenId] = useState(null as string | null);
   const [bag, setBag] = useState(0);
   const [bump, setBump] = useState(0);
@@ -559,6 +568,7 @@ export function ProductShelf({
 
   return (
     <div
+      ref={rootRef}
       className={cn("product-shelf relative min-h-dvh w-full overflow-x-hidden bg-[#f3f1ed] font-sans text-[#111] antialiased", className)}
     >
       {/* wordmark top left, bag top right; both float above the product page too */}
@@ -584,15 +594,15 @@ export function ProductShelf({
       </button>}
 
       <LayoutGroup>
-        <main className={cn("mx-auto w-full max-w-[1080px] px-5 pb-12", showChrome ? "pt-16" : "pt-2")}>
+        <main className={cn("mx-auto w-full pb-12", wide ? "max-w-none px-0" : "max-w-[1080px] px-5", showChrome ? "pt-16" : "pt-2")}>
 
           {rows.map((row, r) => (
             <section key={r} aria-label={`${L.shelfAria} ${r + 1}`} className="relative mb-14">
-              <div className="relative z-10 grid items-end gap-3 px-3 sm:gap-8 sm:px-8" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+              <div className={cn("relative z-10 grid items-end gap-3 sm:gap-8", wide ? "px-2 sm:px-4" : "px-3 sm:px-8")} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
                 {row.map((p) => (
                   <div key={p.id} className="flex flex-col items-center">
                     {openId === p.id ? (
-                      <div className="aspect-[2/3] w-full max-w-[160px]" />
+                      <div className="aspect-[2/3] w-full max-w-[132px]" />
                     ) : (
                       <motion.button
                         layoutId={`product-${p.id}`}
@@ -600,9 +610,9 @@ export function ProductShelf({
                         onClick={() => setOpenId(p.id)}
                         aria-label={`${p.name}, ${fmt(p.price)}`}
                         transition={SPRING}
-                        className="relative aspect-[2/3] w-full max-w-[160px] cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#111111]"
+                        className="group relative aspect-[2/3] w-full max-w-[132px] cursor-pointer rounded-xl outline-none hover:z-10 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#111111]"
                       >
-                        <ProductArt p={p} brand={brand} className="size-full" />
+                        <ProductArt p={p} brand={brand} className="size-full origin-bottom transition-transform duration-200 ease-out group-hover:scale-[1.22] group-focus-visible:scale-[1.22] motion-reduce:transition-none" />
                       </motion.button>
                     )}
                   </div>
@@ -614,7 +624,7 @@ export function ProductShelf({
                 <div className="absolute inset-x-0 top-[8px] h-[8px] bg-[linear-gradient(to_bottom,#ffffff,#ececf0)] shadow-[0_1px_0_rgba(0,0,0,0.04)]" />
                 <div className="absolute inset-x-[2%] top-[16px] h-[34px] bg-[radial-gradient(50%_100%_at_50%_0%,rgba(0,0,0,0.13),transparent)]" />
               </div>
-              <div className="mt-5 grid gap-3 px-3 sm:gap-8 sm:px-8" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+              <div className={cn("mt-5 grid gap-3 sm:gap-8", wide ? "px-2 sm:px-4" : "px-3 sm:px-8")} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
                 {row.map((p) => (
                   <div key={p.id} className="text-center">
                     <div className="text-[13px] leading-tight font-medium sm:text-[14px]">{p.short}</div>

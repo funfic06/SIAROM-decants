@@ -80,6 +80,7 @@ export default function CatalogShelf({ perfumes }: { perfumes: Perfume[] }) {
         brand="SIAROM"
         formatPrice={formatPrice}
         showChrome={false}
+        wide
         overlayTop={overlayTop}
         className="min-h-0 bg-transparent"
         labels={{
