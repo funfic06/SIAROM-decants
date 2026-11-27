@@ -7,7 +7,7 @@ import type { User } from "firebase/auth";
 import { getAdminProfile, signInAdmin, subscribeAuth } from "@/lib/firebase";
 import { logoMark } from "@/lib/catalog";
 
-export const PRIVATE_MODE = true;
+export const PRIVATE_MODE = false;
 
 function authErrorMessage(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
