@@ -648,6 +648,17 @@ function ProductPage({ p, fmt, L, brand, info, renderExtra, overlayTop, onClose,
   const closeRef = useRef(null as HTMLButtonElement | null);
   const drag = useRef(null as { x: number; v: number; samples: { x: number; t: number }[] } | null);
 
+  // trava a rolagem da página de trás enquanto o produto está aberto (sem deslocar o layout)
+  useEffect(() => {
+    const { body } = document;
+    const prevOverflow = body.style.overflow;
+    const prevPadding = body.style.paddingRight;
+    const gap = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = "hidden";
+    if (gap > 0) body.style.paddingRight = `${gap}px`;
+    return () => { body.style.overflow = prevOverflow; body.style.paddingRight = prevPadding; };
+  }, []);
+
   useEffect(() => {
     closeRef.current?.focus({ preventScroll: true });
     if (reduce) return;
@@ -697,7 +708,7 @@ function ProductPage({ p, fmt, L, brand, info, renderExtra, overlayTop, onClose,
   ];
 
   return (
-    <motion.div role="dialog" aria-modal="true" aria-label={p.name} className="fixed inset-x-0 bottom-0 z-20 overflow-y-auto" style={{ top: overlayTop, ["--ov" as string]: `${overlayTop}px` }}
+    <motion.div role="dialog" aria-modal="true" aria-label={p.name} className="fixed inset-x-0 bottom-0 z-20 overflow-y-auto overscroll-contain" style={{ top: overlayTop, ["--ov" as string]: `${overlayTop}px` }}
       onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.dismiss !== undefined) onClose(); }}>
       <motion.div data-dismiss className="fixed inset-x-0 bottom-0 cursor-pointer bg-[#f3f1ed]/88" style={{ top: overlayTop }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
       <div data-dismiss className={cn("relative mx-auto grid min-h-full max-w-[1080px] grid-cols-1 items-center gap-8 px-5 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14", overlayTop ? "pt-8" : "pt-20")}>
