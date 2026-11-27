@@ -699,7 +699,7 @@ function ProductPage({ p, fmt, L, brand, info, renderExtra, overlayTop, onClose,
   return (
     <motion.div role="dialog" aria-modal="true" aria-label={p.name} className="fixed inset-x-0 bottom-0 z-20 overflow-y-auto" style={{ top: overlayTop, ["--ov" as string]: `${overlayTop}px` }}
       onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.dismiss !== undefined) onClose(); }}>
-      <motion.div data-dismiss className="fixed inset-x-0 bottom-0 cursor-pointer bg-[#f3f1ed]/85 backdrop-blur-md" style={{ top: overlayTop }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
+      <motion.div data-dismiss className="fixed inset-x-0 bottom-0 cursor-pointer bg-[#f3f1ed]/88" style={{ top: overlayTop }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }} />
       <div data-dismiss className={cn("relative mx-auto grid min-h-full max-w-[1080px] grid-cols-1 items-center gap-8 px-5 pb-12 md:grid-cols-[1.05fr_1fr] md:gap-14", overlayTop ? "pt-8" : "pt-20")}>
         {/* the product, moved over from the shelf, standing on a white surface */}
         <div data-dismiss className="relative flex flex-col items-center justify-center md:h-[calc(100dvh-7rem-var(--ov,0px))]">
